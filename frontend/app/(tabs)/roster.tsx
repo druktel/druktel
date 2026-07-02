@@ -66,15 +66,15 @@ export default function RosterScreen() {
     }
   }, []);
 
-  const loadCalendar = useCallback(async () => {
-    // Load ~10 weeks (70 days) starting from ~2 weeks before today to give
-    // a wide calendar view.
-    const today = new Date();
-    const s = new Date(today);
-    s.setDate(s.getDate() - 21);
+  const loadCalendar = useCallback(async (aroundDate?: Date) => {
+    // Load ~10 weeks (70 days) around the given date so navigating months
+    // still shows colors/dots.
+    const center = aroundDate || new Date();
+    const s = new Date(center);
+    s.setDate(s.getDate() - 35);
     const monday = mondayOf(s);
     try {
-      const r = await api.myRoster(formatISO(monday), 70);
+      const r = await api.myRoster(formatISO(monday), 105);
       setCalendarRoster(r);
     } catch (e: any) {
       setError(e.message || "Failed to load calendar");
@@ -286,6 +286,9 @@ export default function RosterScreen() {
                   markingType="custom"
                   markedDates={markedDates}
                   onDayPress={(day) => setSelectedDate(day.dateString)}
+                  onMonthChange={(m) => {
+                    loadCalendar(new Date(m.dateString + "T00:00:00"));
+                  }}
                   theme={{
                     backgroundColor: colors.surfaceSecondary,
                     calendarBackground: colors.surfaceSecondary,
