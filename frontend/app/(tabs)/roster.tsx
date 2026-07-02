@@ -81,6 +81,8 @@ export default function RosterScreen() {
       setCalendarRoster(r);
     } catch (e: any) {
       setError(e.message || "Failed to load calendar");
+      // Ensure we don't get stuck in infinite loading state
+      setCalendarRoster({ start_date: formatISO(monday), end_date: formatISO(monday), days: [] });
     }
   }, []);
 

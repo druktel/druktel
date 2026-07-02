@@ -356,8 +356,8 @@ async def update_me(payload: UpdateRosterRequest, user: dict = Depends(get_curre
 
 @api_router.get("/roster/me", response_model=RosterResponse)
 async def my_roster(start: Optional[str] = None, days: int = 14, user: dict = Depends(get_current_user)):
-    if days < 1 or days > 84:
-        raise HTTPException(status_code=400, detail="days must be 1..84")
+    if days < 1 or days > 180:
+        raise HTTPException(status_code=400, detail="days must be 1..180")
     if start:
         try:
             start_date = parse_date(start)
@@ -444,8 +444,8 @@ async def admin_list_users(_: dict = Depends(require_admin)):
 
 @api_router.get("/admin/roster/{user_id}", response_model=RosterResponse)
 async def admin_user_roster(user_id: str, start: Optional[str] = None, days: int = 14, _: dict = Depends(require_admin)):
-    if days < 1 or days > 84:
-        raise HTTPException(status_code=400, detail="days must be 1..84")
+    if days < 1 or days > 180:
+        raise HTTPException(status_code=400, detail="days must be 1..180")
     target = await db.users.find_one({"id": user_id}, {"_id": 0, "pin_hash": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")

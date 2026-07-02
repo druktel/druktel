@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 4 regression — both iteration_3 blockers are FIXED. Backend pytest: 38/38 PASSED (up from 37/38). Explicit verification: (a) /api/holidays?start=2026-01-01&end=2026-12-31 returns {'date':'2026-03-02','name':'Labour Day','type':'public'} with NO 'Labor Day' occurrences in 2026, 2028, or 2030 — wa_holidays._wa_year now post-processes python-holidays output with .replace('Labor Day','Labour Day'). (b) /api/roster/me day-range cap raised from 84 to 180 — days=1→200, 84→200, 105→200, 180→200, 181→400 ('days must be 1..180'), 0→400. Same cap applied to /api/admin/roster/{user_id}. (c) Frontend Calendar view now loads correctly at PIN login: switching to Calendar fires GET /api/roster/me?start=...&days=105 → 200, calendar renders (July 2026 grid), calendar-loading spinner disappears. Tapping future Monday 2026-07-20 → day-detail-card with 'Regular shift' + add-leave-btn visible. Tapping add-leave-btn → day cell turns PURPLE, card switches to 'Personal leave' with remove-leave-btn. Tapping remove-leave-btn → cell returns to green regular and add-leave-btn returns. Full CRUD flow works end-to-end via the calendar UI. No console errors during the whole flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "props.pointerEvents (still present)", "issue": "Non-blocking deprecation warning 'props.pointerEvents is deprecated. Use style.pointerEvents' still observed on the login PIN screen from a prior iteration. Not a regression. Migrate to style.pointerEvents when convenient."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_holidays_and_leaves.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Nothing blocking. Optional: migrate props.pointerEvents → style.pointerEvents to silence the deprecation warning on the login screen."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/wa_holidays.py:19-27 — clean fix: single string replace inside the year cache builder guarantees no 'Labor Day' can ever leak to any API caller. Cache keyed by year, so python-holidays is called at most once per year per process.",
+    "/app/backend/server.py:359-360 and 447-448 — day-range cap now 180 in both endpoints and error message updated ('days must be 1..180'); FE/BE in sync (FE requests 105 for the 15-week calendar view).",
+    "/app/frontend/app/(tabs)/roster.tsx:80 — 105 days is now within the backend cap; loadCalendar still catches errors and sets an empty roster so a future BE mismatch won't cause the infinite-spinner regression again."
+  ],
+  "updated_files": [
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "100% for the flows re-tested (Calendar load + add/remove leave via day-detail-card)"},
+  "seed_data_creation": "Registered TEST 'CalRegr 7348' + one 'TEST Cap User' for cap probing. Backend tests continue to generate random-PIN users (TEST Leave User / TEST Refresh Admin / TEST Today Leave). No cleanup between iterations.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "1) Calendar view fetches 105 days — backend caps at 180 now. Do NOT reintroduce 84. 2) WA holiday spelling: assert 'Labour Day' (AU). The rename happens in wa_holidays._wa_year via .replace(). 3) To exercise the Calendar add/remove leave flow: switch to Calendar via [data-testid=view-mode-calendar], wait for [data-testid=calendar-view] (~3s for 105-day fetch), tap a future working-day cell using page.get_by_text(str(day_of_month), exact=True).first — day-detail-card / add-leave-btn / remove-leave-btn are all reliable testIDs.",
+  "rca_of_issue": "N/A — both iteration_3 blockers verified fixed. See summary for evidence."
+}

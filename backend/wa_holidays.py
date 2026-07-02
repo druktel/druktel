@@ -20,7 +20,11 @@ def _wa_year(year: int) -> Dict[str, str]:
     """Return {ISO date: holiday name} for WA in the given year."""
     if year not in _WA_CACHE:
         wa = _holidays_lib.Australia(subdiv="WA", years=[year])
-        _WA_CACHE[year] = {d.isoformat(): name for d, name in wa.items()}
+        # python-holidays uses US spelling "Labor Day"; WA uses Australian "Labour Day".
+        _WA_CACHE[year] = {
+            d.isoformat(): name.replace("Labor Day", "Labour Day")
+            for d, name in wa.items()
+        }
     return _WA_CACHE[year]
 
 
