@@ -151,7 +151,7 @@ class TestLeavesCRUD:
         # GET again — verify persisted
         r = session.get(f"{API}/leaves", headers=_auth(user_ctx["token"]))
         leaves_after = r.json()["leaves"]
-        assert any(l["date"] == leave_date for l in leaves_after)
+        assert any(lv["date"] == leave_date for lv in leaves_after)
         assert len(leaves_after) == len(initial) + 1
 
         # Duplicate → 409
@@ -178,7 +178,7 @@ class TestLeavesCRUD:
 
         # Verify gone
         r = session.get(f"{API}/leaves", headers=_auth(user_ctx["token"]))
-        assert not any(l["id"] == leave_id for l in r.json()["leaves"])
+        assert not any(lv["id"] == leave_id for lv in r.json()["leaves"])
 
     def test_cannot_delete_other_users_leave(self, session, user_ctx, admin_ctx):
         # User creates a leave; admin tries to delete
@@ -212,7 +212,6 @@ class TestRosterLeaveIntegration:
         )
         assert r.status_code == 200
         base_days = {d["date"]: d for d in r.json()["days"]}
-        base_target = base_days[leave_date]
         neighbor_iso = (target + timedelta(days=1)).isoformat()
         base_neighbor = base_days[neighbor_iso]
 
