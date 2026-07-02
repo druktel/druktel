@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
@@ -13,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api, UserPublic } from "@/src/api/client";
+import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const WEEKDAYS = [
@@ -155,14 +155,11 @@ export default function SettingsScreen() {
               <Ionicons name="sunny-outline" size={18} color={colors.brand} />
               <Text style={styles.cardTitle}>Upcoming day-off (anchor)</Text>
             </View>
-            <TextInput
+            <DatePickerField
               testID="settings-dayoff"
               value={dayOffDate}
-              onChangeText={setDayOffDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.muted}
-              style={styles.input}
-              autoCapitalize="none"
+              onChange={setDayOffDate}
+              label="Pick your day-off"
             />
             <Text style={styles.help}>
               This date must be one of your working days. The 8.5h short day and

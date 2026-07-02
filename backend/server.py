@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime, timedelta, date, timezone
 
+from holidays import get_public_holiday, get_school_holiday, list_holidays_between
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -112,6 +114,8 @@ class DayEntry(BaseModel):
     hours: float
     label: str
     is_today: bool
+    public_holiday: Optional[str] = None
+    school_holiday: Optional[str] = None
 
 
 class RosterResponse(BaseModel):
@@ -200,6 +204,8 @@ def build_roster(user: dict, start: date, num_days: int) -> RosterResponse:
             hours=hours,
             label=label,
             is_today=(d == today),
+            public_holiday=get_public_holiday(d),
+            school_holiday=get_school_holiday(d),
         ))
     return RosterResponse(
         start_date=iso_date(start),
@@ -332,7 +338,17 @@ async def roster_today(user: dict = Depends(get_current_user)):
         "status": status,
         "hours": hours,
         "label": label,
+        "public_holiday": get_public_holiday(today),
+        "school_holiday": get_school_holiday(today),
     }
+
+
+@api_router.get("/holidays")
+async def get_holidays(start: Optional[str] = None, end: Optional[str] = None):
+    today = datetime.now(timezone.utc).date()
+    s = parse_date(start) if start else date(today.year, 1, 1)
+    e = parse_date(end) if end else date(today.year + 1, 12, 31)
+    return {"holidays": list_holidays_between(s, e)}
 
 
 # ---------- Admin ----------

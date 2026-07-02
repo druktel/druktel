@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2 tested holidays endpoint + roster holiday fields + Roster calendar view + native DatePickerField on web. Backend pytest: 26/26 passed (21 previous + 5 new). New tests: WA public holidays 2026 (NYD, Australia Day, Labour Day, WA Day, King's Birthday, Christmas), school-holiday ranges, no-auth on /api/holidays, roster/me public_holiday='Australia Day' on 2026-01-26 for Mon-Fri worker, roster/today includes public_holiday+school_holiday. Frontend regression + new features: view-mode toggle Grid/Calendar works; Calendar renders react-native-calendars with green/orange/grey day colors + tap → day-detail-card + holiday chip; Grid shows purple school-holiday dots; DatePickerField renders as native <input type='date'> on web on Register (testID=input-dayoff) and Settings (testID=settings-dayoff); Settings save returns success 'Roster settings updated'. All regression flows still work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-calendars <Calendar/>", "issue": "No testID prop set → child cells expose 'undefined.day_YYYY-MM-DD' testIDs (harmless but leaks 'undefined' prefix). Reference: /app/frontend/app/(tabs)/roster.tsx:283"},
+      {"component": "Image.tintColor deprecation", "issue": "Console warning 'Image: style.tintColor is deprecated. Please use props.tintColor.' emitted while Calendar view is mounted; likely originates from react-native-calendars arrow icons. Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add testID='roster-calendar' to <Calendar/> in /app/frontend/app/(tabs)/roster.tsx so child day testIDs read 'roster-calendar.day_...'  instead of 'undefined.day_...'.",
+    "(Optional) The Image.tintColor deprecation comes from a third-party lib (react-native-calendars). If it becomes noisy in production, consider suppressing or upgrading the lib.",
+    "No functional bugs; MVP+iteration-2 features are production-ready for testing."
+  ],
+  "critical_code_review_comments": [
+    "server.py:346-351 — /api/holidays is public (no auth). This is intentional and fine for a static WA holiday lookup; no PII exposure.",
+    "holidays.py — data is hardcoded for 2025-2027 only; will silently return empty ranges from 2028 onward. Add a coverage note or extend when needed.",
+    "DatePickerField.tsx:47-52 — Platform.OS='web' branch uses raw <input>; correctly renders native date input. testID default is 'date-picker-field' but call sites override with 'input-dayoff'/'settings-dayoff' (documented in review request, acceptable).",
+    "roster.tsx:69-82 loadCalendar fetches a fixed 70-day window centered ~3 weeks before today. Not paginated when user navigates the calendar to Jan 2026 — dots/coloring only render for dates inside that window. Consider fetching per visible month or expanding to a full year for a smoother UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (appended TestHolidays class with 5 tests)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "100% (all flows verified)"},
+  "seed_data_creation": "Registered UI Test<pin> user with pin ~5586 via /register (Mon-Fri, day-off 2026-07-09 default). Backend fixtures also register a few TEST_/UI users each run. No cleanup between iterations.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "DatePickerField renders as HTML <input type='date'> on web — programmatic value change via .evaluate() does NOT sync back to React state (controlled input). To change date in tests, use page.fill('[data-testid=input-dayoff]', '2026-02-25') or dispatch a native input event with the correct React fiber updater. On calendar view, tapping a date outside the pre-fetched 70-day window will not show color/holiday markings — this is by design of loadCalendar(). Bottom nav tab buttons don't have testIDs like 'tab-roster'; use page.get_by_text('Roster', exact=True).first."
+}

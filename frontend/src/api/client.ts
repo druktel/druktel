@@ -20,6 +20,8 @@ export type DayEntry = {
   hours: number;
   label: string;
   is_today: boolean;
+  public_holiday?: string | null;
+  school_holiday?: string | null;
 };
 
 export type RosterResponse = {
@@ -101,7 +103,20 @@ export const api = {
       status: DayEntry["status"];
       hours: number;
       label: string;
+      public_holiday?: string | null;
+      school_holiday?: string | null;
     }>("/roster/today"),
+  holidays: (start?: string, end?: string) => {
+    const q = new URLSearchParams();
+    if (start) q.set("start", start);
+    if (end) q.set("end", end);
+    return request<{
+      holidays: (
+        | { date: string; name: string; type: "public" }
+        | { start: string; end: string; name: string; type: "school" }
+      )[];
+    }>(`/holidays?${q.toString()}`);
+  },
   adminUsers: () => request<{ users: UserPublic[] }>("/admin/users"),
   adminRoster: (userId: string, days = 14, start?: string) => {
     const q = new URLSearchParams();

@@ -274,3 +274,70 @@ class TestAdmin:
         r = session.get(f"{API}/admin/roster/{regular_user['user']['id']}",
                         headers={"Authorization": f"Bearer {regular_user['token']}"})
         assert r.status_code == 403
+
+
+# ---------- Holidays (WA public + school) ----------
+class TestHolidays:
+    def test_holidays_2026_wa_public(self, session):
+        r = session.get(f"{API}/holidays?start=2026-01-01&end=2026-12-31")
+        assert r.status_code == 200
+        data = r.json()
+        assert "holidays" in data
+        by_date = {h["date"]: h for h in data["holidays"] if h.get("type") == "public"}
+        # Verify all key WA public holidays 2026 present
+        assert by_date["2026-01-01"]["name"] == "New Year's Day"
+        assert by_date["2026-01-26"]["name"] == "Australia Day"
+        assert by_date["2026-03-02"]["name"] == "Labour Day"
+        assert by_date["2026-06-01"]["name"] == "Western Australia Day"
+        assert by_date["2026-09-28"]["name"] == "King's Birthday"
+        assert by_date["2026-12-25"]["name"] == "Christmas Day"
+
+    def test_holidays_includes_school_ranges(self, session):
+        r = session.get(f"{API}/holidays?start=2026-01-01&end=2026-12-31")
+        assert r.status_code == 200
+        data = r.json()
+        schools = [h for h in data["holidays"] if h.get("type") == "school"]
+        assert len(schools) >= 3
+        # Every school item has start/end/name/type
+        for s in schools:
+            assert "start" in s and "end" in s and "name" in s
+            assert s["type"] == "school"
+
+    def test_holidays_no_auth_required(self, session):
+        # Explicitly with no auth header
+        r = requests.get(f"{API}/holidays?start=2026-01-01&end=2026-01-31")
+        assert r.status_code == 200
+
+    def test_roster_me_has_holiday_fields_australia_day(self, session):
+        # Register a Mon-Fri worker with Wed anchor in early 2026 to guarantee 2026-01-26 in range
+        pin = _rand_pin()
+        payload = {
+            "name": "TEST Holiday",
+            "pin": pin,
+            "working_days": [0, 1, 2, 3, 4],
+            "initial_day_off_date": "2026-01-28",  # Wednesday
+            "is_admin": False,
+        }
+        reg = session.post(f"{API}/auth/register", json=payload)
+        assert reg.status_code == 200, reg.text
+        token = reg.json()["token"]
+        # Fetch roster starting Mon 2026-01-26
+        r = session.get(f"{API}/roster/me?start=2026-01-26&days=7",
+                        headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+        days = r.json()["days"]
+        by_date = {d["date"]: d for d in days}
+        aus_day = by_date["2026-01-26"]
+        assert aus_day["public_holiday"] == "Australia Day"
+        # Field must exist (may be None for non-holiday days)
+        for d in days:
+            assert "public_holiday" in d
+            assert "school_holiday" in d
+
+    def test_roster_today_has_holiday_fields(self, session, regular_user):
+        r = session.get(f"{API}/roster/today",
+                        headers={"Authorization": f"Bearer {regular_user['token']}"})
+        assert r.status_code == 200
+        data = r.json()
+        assert "public_holiday" in data
+        assert "school_holiday" in data

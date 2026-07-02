@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
+import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const WEEKDAYS = [
@@ -171,15 +172,13 @@ export default function RegisterScreen() {
             })}
           </View>
 
-          <Text style={styles.label}>Upcoming day-off date (YYYY-MM-DD)</Text>
-          <TextInput
+          <Text style={styles.label}>Upcoming day-off date</Text>
+          <DatePickerField
             testID="input-dayoff"
             value={dayOffDate}
-            onChangeText={setDayOffDate}
-            placeholder="2026-02-25"
-            placeholderTextColor={colors.muted}
-            style={styles.input}
-            autoCapitalize="none"
+            onChange={setDayOffDate}
+            minimumDate={new Date()}
+            label="Pick your day-off"
           />
           <Text style={styles.help}>
             This is a day-off in your fortnight cycle. The day before it becomes
