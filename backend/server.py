@@ -8,10 +8,15 @@ import hashlib
 import uuid
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta, date, timezone
 
-from holidays import get_public_holiday, get_school_holiday, list_holidays_between
+from wa_holidays import (
+    get_public_holiday,
+    get_school_holiday,
+    list_holidays_between,
+    refresh_cache,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -110,12 +115,31 @@ class DayEntry(BaseModel):
     date: str  # YYYY-MM-DD
     weekday: int
     weekday_name: str
-    status: str  # regular | short | day_off | non_working
+    status: str  # regular | short | day_off | non_working | leave
     hours: float
     label: str
     is_today: bool
     public_holiday: Optional[str] = None
     school_holiday: Optional[str] = None
+    leave_note: Optional[str] = None
+
+
+class Leave(BaseModel):
+    id: str
+    date: str
+    note: Optional[str] = None
+    created_at: str
+
+
+class LeaveCreate(BaseModel):
+    date: str
+    note: Optional[str] = None
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, v: str) -> str:
+        datetime.strptime(v, "%Y-%m-%d")
+        return v
 
 
 class RosterResponse(BaseModel):
@@ -190,14 +214,22 @@ def compute_day_status(user: dict, d: date):
         return ("regular", 9.0, "9h shift")
 
 
-def build_roster(user: dict, start: date, num_days: int) -> RosterResponse:
+def build_roster(user: dict, start: date, num_days: int, leaves: Optional[Dict[str, str]] = None) -> RosterResponse:
+    """leaves: {ISO date: note} — any date here becomes status='leave' with 0h."""
     today = datetime.now(timezone.utc).date()
+    leaves = leaves or {}
     entries: List[DayEntry] = []
     for i in range(num_days):
         d = start + timedelta(days=i)
-        status, hours, label = compute_day_status(user, d)
+        iso = iso_date(d)
+        if iso in leaves:
+            status, hours, label = "leave", 0.0, "Personal leave"
+            leave_note: Optional[str] = leaves[iso] or None
+        else:
+            status, hours, label = compute_day_status(user, d)
+            leave_note = None
         entries.append(DayEntry(
-            date=iso_date(d),
+            date=iso,
             weekday=d.weekday(),
             weekday_name=WEEKDAY_NAMES[d.weekday()],
             status=status,
@@ -206,12 +238,21 @@ def build_roster(user: dict, start: date, num_days: int) -> RosterResponse:
             is_today=(d == today),
             public_holiday=get_public_holiday(d),
             school_holiday=get_school_holiday(d),
+            leave_note=leave_note,
         ))
     return RosterResponse(
         start_date=iso_date(start),
         end_date=iso_date(start + timedelta(days=num_days - 1)),
         days=entries,
     )
+
+
+async def get_user_leaves_map(user_id: str, start: date, end: date) -> Dict[str, str]:
+    docs = await db.leaves.find(
+        {"user_id": user_id, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}},
+        {"_id": 0},
+    ).to_list(1000)
+    return {d["date"]: d.get("note", "") for d in docs}
 
 
 # ---------- Routes ----------
@@ -325,21 +366,31 @@ async def my_roster(start: Optional[str] = None, days: int = 14, user: dict = De
     else:
         today = datetime.now(timezone.utc).date()
         start_date = today - timedelta(days=today.weekday())  # Monday of current week
-    return build_roster(user, start_date, days)
+    end_date = start_date + timedelta(days=days - 1)
+    leaves = await get_user_leaves_map(user["id"], start_date, end_date)
+    return build_roster(user, start_date, days, leaves)
 
 
 @api_router.get("/roster/today")
 async def roster_today(user: dict = Depends(get_current_user)):
     today = datetime.now(timezone.utc).date()
-    status, hours, label = compute_day_status(user, today)
+    leaves = await get_user_leaves_map(user["id"], today, today)
+    iso = today.isoformat()
+    if iso in leaves:
+        status, hours, label = "leave", 0.0, "Personal leave"
+        leave_note = leaves[iso] or None
+    else:
+        status, hours, label = compute_day_status(user, today)
+        leave_note = None
     return {
-        "date": iso_date(today),
+        "date": iso,
         "weekday_name": WEEKDAY_NAMES[today.weekday()],
         "status": status,
         "hours": hours,
         "label": label,
         "public_holiday": get_public_holiday(today),
         "school_holiday": get_school_holiday(today),
+        "leave_note": leave_note,
     }
 
 
@@ -349,6 +400,39 @@ async def get_holidays(start: Optional[str] = None, end: Optional[str] = None):
     s = parse_date(start) if start else date(today.year, 1, 1)
     e = parse_date(end) if end else date(today.year + 1, 12, 31)
     return {"holidays": list_holidays_between(s, e)}
+
+
+# ---------- Personal leave ----------
+@api_router.get("/leaves")
+async def list_leaves(user: dict = Depends(get_current_user)):
+    docs = await db.leaves.find({"user_id": user["id"]}, {"_id": 0, "user_id": 0}).to_list(1000)
+    docs.sort(key=lambda x: x["date"])
+    return {"leaves": docs}
+
+
+@api_router.post("/leaves", response_model=Leave)
+async def add_leave(payload: LeaveCreate, user: dict = Depends(get_current_user)):
+    # Enforce uniqueness per user+date
+    existing = await db.leaves.find_one({"user_id": user["id"], "date": payload.date})
+    if existing:
+        raise HTTPException(status_code=409, detail="Leave already exists for this date")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "date": payload.date,
+        "note": (payload.note or "").strip(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.leaves.insert_one(doc)
+    return Leave(id=doc["id"], date=doc["date"], note=doc["note"] or None, created_at=doc["created_at"])
+
+
+@api_router.delete("/leaves/{leave_id}")
+async def delete_leave(leave_id: str, user: dict = Depends(get_current_user)):
+    res = await db.leaves.delete_one({"id": leave_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    return {"ok": True}
 
 
 # ---------- Admin ----------
@@ -370,7 +454,18 @@ async def admin_user_roster(user_id: str, start: Optional[str] = None, days: int
     else:
         today = datetime.now(timezone.utc).date()
         start_date = today - timedelta(days=today.weekday())
-    return build_roster(target, start_date, days)
+    end_date = start_date + timedelta(days=days - 1)
+    leaves = await get_user_leaves_map(target["id"], start_date, end_date)
+    return build_roster(target, start_date, days, leaves)
+
+
+@api_router.post("/admin/holidays/refresh")
+async def admin_refresh_holidays(_: dict = Depends(require_admin)):
+    """Refresh WA public holiday cache. Uses python-holidays library which
+    computes holidays algorithmically for any year, so no external network
+    fetch is required. Returns holidays computed per year."""
+    result = refresh_cache()
+    return {"refreshed": result}
 
 
 app.include_router(api_router)
@@ -389,6 +484,8 @@ async def startup_indexes():
     await db.users.create_index("pin_hash", unique=True)
     await db.users.create_index("id", unique=True)
     await db.sessions.create_index("token", unique=True)
+    await db.leaves.create_index([("user_id", 1), ("date", 1)], unique=True)
+    await db.leaves.create_index("id", unique=True)
 
 
 @app.on_event("shutdown")

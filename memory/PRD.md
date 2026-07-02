@@ -18,9 +18,16 @@ Mobile roster app for shift workers on a 9-day fortnight schedule. Users pick th
 - Non-working weekdays (e.g., Sat/Sun for a Mon–Fri worker) show as "—"
 
 ## Holidays
-- WA public holidays hardcoded for 2025–2027 (New Year, Australia Day, Labour Day, Good Friday, Easter Sat/Sun/Mon, ANZAC Day, WA Day, King's Birthday, Christmas, Boxing Day)
-- WA school holiday date ranges hardcoded for 2025–2027 (Term 1/2/3 + Summer)
+- WA public holidays computed **algorithmically** via `python-holidays` (WA subdivision) for any year — no yearly maintenance
+- WA school holiday date ranges hardcoded for 2025–2028 (extend as WA Dept of Education publishes new dates)
 - Roster grid + calendar view show holiday dots (red = public, purple = school)
+- Admin endpoint `POST /api/admin/holidays/refresh` clears the in-memory cache
+
+## Personal Leave
+- Users can mark any date as personal leave (auto-computed roster is overridden → 0h)
+- Managed from Settings → "Personal leave days" (add via date-picker + note, delete via trash icon)
+- Also add/remove directly from the Roster calendar day-detail card
+- Leave days appear in **purple** (`#7C3AED`) across Today, Grid, and Calendar views
 
 ## Screens
 - `/login` — PIN pad (auto-submits at 4 digits)
@@ -36,11 +43,15 @@ Mobile roster app for shift workers on a 9-day fortnight schedule. Users pick th
 - `POST /api/auth/logout`
 - `GET /api/users/me`
 - `PUT /api/users/me` `{working_days[], initial_day_off_date}`
-- `GET /api/roster/me?start=YYYY-MM-DD&days=14` — DayEntry now includes `public_holiday` and `school_holiday`
-- `GET /api/roster/today` — includes holiday fields
-- `GET /api/holidays?start=YYYY-MM-DD&end=YYYY-MM-DD` — list of WA public + school holidays
+- `GET /api/roster/me?start=YYYY-MM-DD&days=14` — DayEntry now includes `public_holiday`, `school_holiday`, and `leave_note`
+- `GET /api/roster/today` — includes holiday + leave fields
+- `GET /api/holidays?start=YYYY-MM-DD&end=YYYY-MM-DD` — list of WA public + school holidays (any year)
+- `GET /api/leaves` — list my leave days
+- `POST /api/leaves` `{date, note?}` — add a leave day (unique per user+date)
+- `DELETE /api/leaves/{id}` — remove
 - `GET /api/admin/users` (admin)
 - `GET /api/admin/roster/{user_id}?start=YYYY-MM-DD&days=14` (admin)
+- `POST /api/admin/holidays/refresh` (admin) — refreshes WA holiday cache
 
 ## Business enhancement
 Team-visibility (admin tab) turns this from a personal utility into a workforce coverage tool — a manager can instantly spot upcoming day-off collisions across the team. WA-specific holiday overlay saves managers from manually cross-checking published calendars.

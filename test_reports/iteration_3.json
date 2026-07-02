@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3: dynamic WA holidays + admin refresh + Personal Leave feature. Backend pytest: 37/38 passed. NEW test file /app/backend/tests/test_holidays_and_leaves.py with 12 tests (all pass) covering dynamic holidays 2028-2030, /api/admin/holidays/refresh (RBAC + admin OK), /api/leaves CRUD (auth, add/list/delete, duplicate 409, 422 bad date, cross-user 404), and roster integration (leave overrides working day with status='leave'/hours=0/label='Personal leave'/leave_note; /api/roster/today shows leave when today is marked). Frontend: Settings 'Personal leave days' card + add/list/delete flow WORKS end-to-end (verified adding Thu Jul 9, 2026 with note 'UI test leave' → row rendered with trash button); Grid view shows LEAVE cell in PURPLE with Personal leave legend; Today tab shows 'Personal leave' hero with purple tint and note text 'You're off — Sick today UI.' when today is marked as leave. TWO ISSUES: (1) Backend regression — python-holidays library returns 'Labor Day' (US spelling) instead of 'Labour Day' (AU spelling used in iteration_2); breaks pre-existing test_holidays_2026_wa_public assertion. (2) CRITICAL frontend regression — Calendar view is broken: /app/frontend/app/(tabs)/roster.tsx:80 calls api.myRoster(monday, 105) but backend server.py:359 rejects days>84 with 400. Calendar tab stays permanently on loading spinner; day-detail-card / add-leave-btn / remove-leave-btn cannot be tested via Calendar UI.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/holidays", "issue": "python-holidays returns 'Labor Day' (US spelling) for WA — WA officially uses 'Labour Day' (AU spelling). Breaks iteration_2 test assertion in backend_test.py:290. Consider post-processing the library output to rename 'Labor Day' -> 'Labour Day' in wa_holidays.py so UI shows the correct Australian spelling."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Roster > Calendar view", "issue": "Calendar tab shows infinite loading spinner. loadCalendar fetches 105 days but backend caps at 84 → 400 error swallowed by UI. Reference: /app/frontend/app/(tabs)/roster.tsx:80 `api.myRoster(formatISO(monday), 105)` vs /app/backend/server.py:359 `if days < 1 or days > 84`.", "testID": "n/a", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Calendar view leave add/remove via day-detail-card", "issue": "Cannot be exercised because calendar never renders due to 400. Once fix applied (either lower to 84 or raise backend cap), retest add-leave-btn / remove-leave-btn on day-detail-card.", "affected_testIDs": ["day-detail-card", "add-leave-btn", "remove-leave-btn"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "props.pointerEvents", "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' seen when entering login PIN. Likely from a Touchable wrapper. Non-blocking but should migrate to style.pointerEvents. Reference: emitted during /login render."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_holidays_and_leaves.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix Calendar view — either change /app/frontend/app/(tabs)/roster.tsx:80 to request 84 or fewer days (e.g. 70 as in iteration_2), or raise the backend limit in server.py:359 (my_roster) and admin_user_roster (line ~447) from 84 to at least 105 to match frontend. Loading state also swallows the 400 silently — add error handling so user sees a message.",
+    "Regression: /api/holidays now returns 'Labor Day' (was 'Labour Day' in iteration_2). Recommend post-processing python-holidays output in wa_holidays.py: `_WA_CACHE[year] = {d.isoformat(): (name.replace('Labor Day', 'Labour Day')) for d, name in wa.items()}`. Then re-enable strict spelling assertion in backend_test.py:290.",
+    "Consider adding a testID like 'today-hero' or 'today-status' on the Today tab hero card to make it easier to assert 'Personal leave' state in future automation runs.",
+    "Fix props.pointerEvents deprecation warning (migrate to style.pointerEvents)."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/app/(tabs)/roster.tsx:80 — hard-coded 105 days exceeds backend limit; no try/catch around api.myRoster in loadCalendar → 400 silently leaves calendarRoster undefined and Calendar shows perpetual spinner. Need error state.",
+    "/app/backend/wa_holidays.py:22 — python-holidays library returns US 'Labor Day' for AU/WA. This is a real user-facing text regression from iteration_2 hard-coded 'Labour Day'. Post-process the mapping to the official WA name.",
+    "/app/backend/server.py:359,447 — days ceiling of 84 is undocumented. Either bump to a value that matches the frontend or expose as a constant to keep FE/BE in sync.",
+    "/app/backend/server.py:398-402 — /api/holidays default range: current year Jan 1 → next year Dec 31; fine, but could hint about missing school-holiday coverage beyond 2028 (see wa_holidays.py:52).",
+    "/app/backend/server.py:487 — leaves compound unique index on (user_id, date) is correct and matches the 409 duplicate behavior. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_holidays_and_leaves.py (new file, 12 tests)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": {"backend": "97% (37/38 — 1 pre-existing test broken by python-holidays spelling)", "frontend": "80% (Settings + Grid + Today verified; Calendar view broken)"},
+  "seed_data_creation": "Registered several TEST_/UI Leave/UI Cal users with random 4-digit PINs. Created leaves for Thu Jul 9, 2026 and current-day leaves. No cleanup between iterations.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "1) When testing Calendar view, first verify /api/roster/me?days=N doesn't 400 — frontend currently sends 105 which backend rejects. 2) DatePickerField on web renders as native <input type=date>; the wrapper testID (e.g. new-leave-date) is on the container div, NOT the input. To programmatically set a date, use page.fill on the actual `input[type=date]` descendant OR use React's native setter; simple `page.fill('[data-testid=new-leave-date]')` and JS native setter both fail — use `page.fill('[data-testid=new-leave-date] input')` instead. 3) The DatePickerField auto-populates with a default date on Settings (today + 14d or similar) so 'add-leave-btn' works even without changing the date — the leave-row testID uses whatever date is submitted. 4) To login, must click digit buttons via `page.get_by_text('7', exact=True).first.click()` — there is no single [data-testid=input-pin] input. 5) auth_token in localStorage does NOT hydrate the app; must use PIN pad to log in.",
+  "rca_of_issue": "Calendar loading spinner RCA: /app/frontend/app/(tabs)/roster.tsx:80 requests `api.myRoster(monday, 105)` returning 15 weeks. Backend server.py:359 enforces `if days < 1 or days > 84: raise HTTPException(400, 'days must be 1..84')`. Frontend request → 400 → loadCalendar catches nothing meaningful → calendarRoster stays undefined → conditional renders spinner indefinitely. Reproduce: login → tap Roster → tap Calendar → observe spinner + Network 400 on /api/roster/me?days=105. Mitigation A (frontend): change 105 → 84 (or 70). Mitigation B (backend): raise cap to >=105 (also update line ~447 admin_user_roster). Mitigation C (defense): wrap loadCalendar in try/catch and surface an error UI state so future mismatches don't silently break the tab."
+}

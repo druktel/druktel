@@ -16,12 +16,20 @@ export type DayEntry = {
   date: string;
   weekday: number;
   weekday_name: string;
-  status: "regular" | "short" | "day_off" | "non_working";
+  status: "regular" | "short" | "day_off" | "non_working" | "leave";
   hours: number;
   label: string;
   is_today: boolean;
   public_holiday?: string | null;
   school_holiday?: string | null;
+  leave_note?: string | null;
+};
+
+export type Leave = {
+  id: string;
+  date: string;
+  note?: string | null;
+  created_at: string;
 };
 
 export type RosterResponse = {
@@ -124,4 +132,16 @@ export const api = {
     if (start) q.set("start", start);
     return request<RosterResponse>(`/admin/roster/${userId}?${q.toString()}`);
   },
+  adminRefreshHolidays: () =>
+    request<{ refreshed: Record<string, number> }>("/admin/holidays/refresh", {
+      method: "POST",
+    }),
+  listLeaves: () => request<{ leaves: Leave[] }>("/leaves"),
+  addLeave: (date: string, note?: string) =>
+    request<Leave>("/leaves", {
+      method: "POST",
+      body: JSON.stringify({ date, note }),
+    }),
+  deleteLeave: (id: string) =>
+    request<{ ok: boolean }>(`/leaves/${id}`, { method: "DELETE" }),
 };

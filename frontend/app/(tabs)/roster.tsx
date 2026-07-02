@@ -36,6 +36,8 @@ function statusColor(status: DayEntry["status"]) {
       return { bg: colors.warning, text: "#fff", label: "8.5h" };
     case "day_off":
       return { bg: colors.surfaceTertiary, text: colors.onSurfaceTertiary, label: "OFF" };
+    case "leave":
+      return { bg: "#7C3AED", text: "#fff", label: "LEAVE" };
     case "non_working":
       return { bg: "transparent", text: colors.muted, label: "—" };
   }
@@ -48,10 +50,12 @@ export default function RosterScreen() {
   const [start, setStart] = useState<Date>(() => mondayOf(new Date()));
   const [roster, setRoster] = useState<RosterResponse | null>(null);
   const [calendarRoster, setCalendarRoster] = useState<RosterResponse | null>(null);
+  const [calendarAround, setCalendarAround] = useState<Date>(() => new Date());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [leaveBusy, setLeaveBusy] = useState(false);
 
   const load = useCallback(async (s: Date) => {
     setError(null);
@@ -67,9 +71,8 @@ export default function RosterScreen() {
   }, []);
 
   const loadCalendar = useCallback(async (aroundDate?: Date) => {
-    // Load ~10 weeks (70 days) around the given date so navigating months
-    // still shows colors/dots.
     const center = aroundDate || new Date();
+    setCalendarAround(center);
     const s = new Date(center);
     s.setDate(s.getDate() - 35);
     const monday = mondayOf(s);
@@ -80,6 +83,37 @@ export default function RosterScreen() {
       setError(e.message || "Failed to load calendar");
     }
   }, []);
+
+  const addLeave = async () => {
+    if (!selectedDate) return;
+    setLeaveBusy(true);
+    try {
+      await api.addLeave(selectedDate);
+      // Reload both grid and calendar so the new leave shows immediately.
+      await Promise.all([load(start), loadCalendar(calendarAround)]);
+    } catch (e: any) {
+      setError(e.message || "Failed to add leave");
+    } finally {
+      setLeaveBusy(false);
+    }
+  };
+
+  const removeLeave = async () => {
+    if (!selectedDate) return;
+    setLeaveBusy(true);
+    try {
+      const list = await api.listLeaves();
+      const match = list.leaves.find((l) => l.date === selectedDate);
+      if (match) {
+        await api.deleteLeave(match.id);
+      }
+      await Promise.all([load(start), loadCalendar(calendarAround)]);
+    } catch (e: any) {
+      setError(e.message || "Failed to remove leave");
+    } finally {
+      setLeaveBusy(false);
+    }
+  };
 
   useEffect(() => {
     load(start);
@@ -125,6 +159,9 @@ export default function RosterScreen() {
         textColor = "#fff";
       } else if (d.status === "short") {
         bgColor = colors.warning;
+        textColor = "#fff";
+      } else if (d.status === "leave") {
+        bgColor = "#7C3AED";
         textColor = "#fff";
       } else if (d.status === "day_off") {
         bgColor = colors.surfaceTertiary;
@@ -304,7 +341,12 @@ export default function RosterScreen() {
               </View>
 
               {selectedEntry ? (
-                <DayDetailCard entry={selectedEntry} />
+                <DayDetailCard
+                  entry={selectedEntry}
+                  onAddLeave={addLeave}
+                  onRemoveLeave={removeLeave}
+                  busy={leaveBusy}
+                />
               ) : (
                 <Text style={styles.hint}>Tap a date to see details.</Text>
               )}
@@ -338,7 +380,10 @@ function WeekBlock({
       <View style={styles.daysGrid}>
         {days.map((d) => {
           const c = statusColor(d.status);
-          const isWorking = d.status === "regular" || d.status === "short";
+          const isColored =
+            d.status === "regular" ||
+            d.status === "short" ||
+            d.status === "leave";
           return (
             <View
               key={d.date}
@@ -350,13 +395,13 @@ function WeekBlock({
                   borderColor: d.is_today ? colors.onSurface : "transparent",
                   borderWidth: d.is_today ? 2 : 0,
                 },
-                !isWorking && styles.dayCellSoft,
+                !isColored && styles.dayCellSoft,
               ]}
             >
               <Text
                 style={[
                   styles.dayName,
-                  { color: isWorking ? "rgba(255,255,255,0.85)" : colors.onSurfaceTertiary },
+                  { color: isColored ? "rgba(255,255,255,0.85)" : colors.onSurfaceTertiary },
                 ]}
               >
                 {d.weekday_name}
@@ -364,7 +409,7 @@ function WeekBlock({
               <Text
                 style={[
                   styles.dayDate,
-                  { color: isWorking ? "#fff" : colors.onSurface },
+                  { color: isColored ? "#fff" : colors.onSurface },
                 ]}
               >
                 {new Date(d.date + "T00:00:00").getDate()}
@@ -388,9 +433,30 @@ function WeekBlock({
   );
 }
 
-function DayDetailCard({ entry }: { entry: DayEntry }) {
+function DayDetailCard({
+  entry,
+  onAddLeave,
+  onRemoveLeave,
+  busy,
+}: {
+  entry: DayEntry;
+  onAddLeave: () => void;
+  onRemoveLeave: () => void;
+  busy: boolean;
+}) {
   const c = statusColor(entry.status);
   const isWorking = entry.status === "regular" || entry.status === "short";
+  const isLeave = entry.status === "leave";
+  const statusLabel =
+    entry.status === "regular"
+      ? "Regular shift"
+      : entry.status === "short"
+        ? "Short day"
+        : entry.status === "day_off"
+          ? "Day off"
+          : entry.status === "leave"
+            ? "Personal leave"
+            : "Weekend";
   return (
     <View style={styles.detailCard} testID="day-detail-card">
       <View style={styles.detailHeader}>
@@ -403,15 +469,7 @@ function DayDetailCard({ entry }: { entry: DayEntry }) {
               year: "numeric",
             })}
           </Text>
-          <Text style={styles.detailStatus}>
-            {entry.status === "regular"
-              ? "Regular shift"
-              : entry.status === "short"
-                ? "Short day"
-                : entry.status === "day_off"
-                  ? "Day off"
-                  : "Weekend"}
-          </Text>
+          <Text style={styles.detailStatus}>{statusLabel}</Text>
         </View>
         <View style={[styles.detailBadge, { backgroundColor: c.bg }]}>
           <Text style={[styles.detailBadgeText, { color: c.text }]}>{c.label}</Text>
@@ -421,6 +479,9 @@ function DayDetailCard({ entry }: { entry: DayEntry }) {
         <Text style={styles.detailHelp}>
           {entry.hours.toFixed(1)} hours including 30 min lunch break
         </Text>
+      )}
+      {isLeave && entry.leave_note && (
+        <Text style={styles.detailHelp}>Note: {entry.leave_note}</Text>
       )}
       {entry.public_holiday && (
         <View style={styles.holidayTag}>
@@ -434,6 +495,34 @@ function DayDetailCard({ entry }: { entry: DayEntry }) {
           <Text style={styles.holidayText}>{entry.school_holiday}</Text>
         </View>
       )}
+
+      {isLeave ? (
+        <TouchableOpacity
+          testID="remove-leave-btn"
+          style={[styles.leaveBtn, styles.leaveBtnRemove, busy && { opacity: 0.6 }]}
+          onPress={onRemoveLeave}
+          disabled={busy}
+        >
+          <Ionicons name="trash-outline" size={16} color={colors.error} />
+          <Text style={[styles.leaveBtnText, { color: colors.error }]}>
+            Remove personal leave
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        entry.status !== "non_working" && (
+          <TouchableOpacity
+            testID="add-leave-btn"
+            style={[styles.leaveBtn, styles.leaveBtnAdd, busy && { opacity: 0.6 }]}
+            onPress={onAddLeave}
+            disabled={busy}
+          >
+            <Ionicons name="airplane-outline" size={16} color="#7C3AED" />
+            <Text style={[styles.leaveBtnText, { color: "#7C3AED" }]}>
+              Mark as personal leave
+            </Text>
+          </TouchableOpacity>
+        )
+      )}
     </View>
   );
 }
@@ -444,6 +533,7 @@ function Legend({ showHolidays }: { showHolidays?: boolean } = {}) {
       <LegendItem color={colors.brand} label="9h shift" />
       <LegendItem color={colors.warning} label="8.5h short" />
       <LegendItem color={colors.surfaceTertiary} label="Day off" isLight />
+      <LegendItem color="#7C3AED" label="Personal leave" />
       {showHolidays && (
         <>
           <LegendItem color={colors.error} label="WA public holiday" isDot />
@@ -640,4 +730,23 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   holidayText: { color: colors.onSurface, fontSize: 13, flex: 1 },
+  leaveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  leaveBtnAdd: {
+    borderColor: "#7C3AED",
+    backgroundColor: "#F5F0FF",
+  },
+  leaveBtnRemove: {
+    borderColor: colors.error,
+    backgroundColor: "#FFF5F5",
+  },
+  leaveBtnText: { fontWeight: "700", fontSize: 14 },
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api, UserPublic } from "@/src/api/client";
+import { useFocusEffect } from "expo-router";
+import { api, UserPublic, Leave } from "@/src/api/client";
 import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -33,6 +35,28 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  const [leaves, setLeaves] = useState<Leave[]>([]);
+  const [newLeaveDate, setNewLeaveDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+  const [newLeaveNote, setNewLeaveNote] = useState("");
+  const [addingLeave, setAddingLeave] = useState(false);
+  const [leaveMsg, setLeaveMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  const loadLeaves = useCallback(async () => {
+    try {
+      const res = await api.listLeaves();
+      setLeaves(res.leaves);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
@@ -47,6 +71,41 @@ export default function SettingsScreen() {
       }
     })();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadLeaves();
+    }, [loadLeaves]),
+  );
+
+  const addLeave = async () => {
+    setLeaveMsg(null);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newLeaveDate)) {
+      setLeaveMsg({ type: "err", text: "Pick a valid date" });
+      return;
+    }
+    setAddingLeave(true);
+    try {
+      await api.addLeave(newLeaveDate, newLeaveNote.trim() || undefined);
+      setNewLeaveNote("");
+      setLeaveMsg({ type: "ok", text: "Leave day added" });
+      await loadLeaves();
+    } catch (e: any) {
+      setLeaveMsg({ type: "err", text: e.message || "Failed to add" });
+    } finally {
+      setAddingLeave(false);
+    }
+  };
+
+  const removeLeave = async (id: string) => {
+    setLeaveMsg(null);
+    try {
+      await api.deleteLeave(id);
+      await loadLeaves();
+    } catch (e: any) {
+      setLeaveMsg({ type: "err", text: e.message || "Failed to remove" });
+    }
+  };
 
   const toggleDay = (i: number) => {
     setWorkingDays((wd) =>
@@ -191,6 +250,101 @@ export default function SettingsScreen() {
               <Text style={styles.ctaText}>Save changes</Text>
             )}
           </TouchableOpacity>
+
+          <View style={[styles.card, { marginTop: spacing.xl }]}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="airplane-outline" size={18} color="#7C3AED" />
+              <Text style={styles.cardTitle}>Personal leave days</Text>
+            </View>
+            <Text style={[styles.help, { marginTop: 0, marginBottom: spacing.md }]}>
+              Mark days as personal leave. They override the auto-computed
+              roster and show as 0h.
+            </Text>
+
+            <Text style={styles.smallLabel}>Date</Text>
+            <DatePickerField
+              testID="new-leave-date"
+              value={newLeaveDate}
+              onChange={setNewLeaveDate}
+              label="Pick a leave date"
+            />
+
+            <Text style={[styles.smallLabel, { marginTop: spacing.md }]}>
+              Note (optional)
+            </Text>
+            <TextInput
+              testID="new-leave-note"
+              value={newLeaveNote}
+              onChangeText={setNewLeaveNote}
+              placeholder="e.g., Annual leave, sick day"
+              placeholderTextColor={colors.muted}
+              style={styles.leaveInput}
+              maxLength={80}
+            />
+
+            {leaveMsg && (
+              <Text
+                testID="leave-message"
+                style={[
+                  styles.msg,
+                  leaveMsg.type === "ok" ? styles.msgOk : styles.msgErr,
+                ]}
+              >
+                {leaveMsg.text}
+              </Text>
+            )}
+
+            <TouchableOpacity
+              testID="add-leave-btn"
+              onPress={addLeave}
+              style={[styles.addLeaveBtn, addingLeave && { opacity: 0.6 }]}
+              disabled={addingLeave}
+            >
+              {addingLeave ? (
+                <ActivityIndicator color="#7C3AED" />
+              ) : (
+                <>
+                  <Ionicons name="add" size={18} color="#7C3AED" />
+                  <Text style={styles.addLeaveText}>Add leave day</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {leaves.length > 0 && (
+              <View style={styles.leaveList}>
+                {leaves.map((l) => (
+                  <View key={l.id} style={styles.leaveRow} testID={`leave-row-${l.date}`}>
+                    <View style={styles.leaveDot} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.leaveDate}>
+                        {new Date(l.date + "T00:00:00").toLocaleDateString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </Text>
+                      {l.note ? (
+                        <Text style={styles.leaveNote}>{l.note}</Text>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity
+                      testID={`delete-leave-${l.date}`}
+                      onPress={() => removeLeave(l.id)}
+                      style={styles.leaveDeleteBtn}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+            {leaves.length === 0 && (
+              <Text style={[styles.help, { marginTop: spacing.md }]}>
+                No personal leave days scheduled.
+              </Text>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -270,4 +424,52 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   ctaText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  smallLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.onSurfaceTertiary,
+    marginBottom: spacing.sm,
+  },
+  leaveInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    fontSize: 15,
+    color: colors.onSurface,
+  },
+  addLeaveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "#7C3AED",
+    backgroundColor: "#F5F0FF",
+  },
+  addLeaveText: { color: "#7C3AED", fontWeight: "700" },
+  leaveList: { marginTop: spacing.md, gap: spacing.sm },
+  leaveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  leaveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#7C3AED",
+  },
+  leaveDate: { color: colors.onSurface, fontWeight: "600", fontSize: 14 },
+  leaveNote: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  leaveDeleteBtn: { padding: spacing.sm },
 });

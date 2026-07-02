@@ -18,9 +18,12 @@ import { colors, spacing, radius } from "@/src/theme/colors";
 type TodayInfo = {
   date: string;
   weekday_name: string;
-  status: "regular" | "short" | "day_off" | "non_working";
+  status: "regular" | "short" | "day_off" | "non_working" | "leave";
   hours: number;
   label: string;
+  public_holiday?: string | null;
+  school_holiday?: string | null;
+  leave_note?: string | null;
 };
 
 const DAY_OFF_IMG =
@@ -43,6 +46,8 @@ function statusMeta(status: TodayInfo["status"]) {
       return { title: "Short day", tint: colors.warningTint, accent: colors.warning };
     case "day_off":
       return { title: "Day off", tint: colors.surfaceTertiary, accent: colors.muted };
+    case "leave":
+      return { title: "Personal leave", tint: "#F5F0FF", accent: "#7C3AED" };
     case "non_working":
       return { title: "Weekend", tint: colors.surfaceTertiary, accent: colors.muted };
   }
@@ -159,13 +164,19 @@ export default function TodayScreen() {
               <Text style={styles.heroTitle} testID="today-status">
                 {meta.title}
               </Text>
-              {today.status !== "day_off" && today.status !== "non_working" ? (
+              {today.status !== "day_off" && today.status !== "non_working" && today.status !== "leave" ? (
                 <>
                   <Text style={styles.heroHours} testID="today-hours">
                     {today.hours.toFixed(1)}h
                   </Text>
                   <Text style={styles.heroSub}>
                     Includes 30 min lunch break
+                  </Text>
+                </>
+              ) : today.status === "leave" ? (
+                <>
+                  <Text style={styles.heroSub}>
+                    You&apos;re off — {today.leave_note || "personal leave"}.
                   </Text>
                 </>
               ) : (
@@ -203,7 +214,7 @@ export default function TodayScreen() {
                   <Text style={styles.upcomingLabel}>{d.label}</Text>
                 </View>
                 <Text style={styles.upcomingHours}>
-                  {d.status === "day_off" || d.status === "non_working" ? "—" : `${d.hours.toFixed(1)}h`}
+                  {d.status === "day_off" || d.status === "non_working" || d.status === "leave" ? "—" : `${d.hours.toFixed(1)}h`}
                 </Text>
               </View>
             );
