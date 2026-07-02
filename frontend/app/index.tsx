@@ -1,16 +1,32 @@
-import { Text, View, StyleSheet, Image } from "react-native";
-
-const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { useEffect } from "react";
+import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { useRouter } from "expo-router";
+import { api } from "@/src/api/client";
+import { colors } from "@/src/theme/colors";
 
 export default function Index() {
-  console.log(EXPO_PUBLIC_BACKEND_URL, "EXPO_PUBLIC_BACKEND_URL");
+  const router = useRouter();
+
+  useEffect(() => {
+    (async () => {
+      const token = await api.getToken();
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      try {
+        await api.me();
+        router.replace("/(tabs)");
+      } catch {
+        await api.setToken(null);
+        router.replace("/login");
+      }
+    })();
+  }, [router]);
 
   return (
-    <View style={styles.container}>
-      <Image
-        source={require("../assets/images/app-image.png")}
-        style={styles.image}
-      />
+    <View style={styles.container} testID="splash-loading">
+      <ActivityIndicator color={colors.brand} size="large" />
     </View>
   );
 }
@@ -18,13 +34,8 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0c0c0c",
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
-  },
-  image: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
   },
 });
