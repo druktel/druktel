@@ -42,6 +42,9 @@ def user_ctx(session):
             "working_days": [0, 1, 2, 3, 4],
             "initial_day_off_date": _next_weekday(2),  # Wednesday
             "is_admin": False,
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         }
         r = session.post(f"{API}/auth/register", json=payload)
         if r.status_code == 200:
@@ -51,19 +54,12 @@ def user_ctx(session):
 
 @pytest.fixture(scope="module")
 def admin_ctx(session):
-    for _ in range(10):
-        pin = _rand_pin()
-        payload = {
-            "name": "TEST Refresh Admin",
-            "pin": pin,
-            "working_days": [0, 1, 2, 3, 4],
-            "initial_day_off_date": _next_weekday(4),
-            "is_admin": True,
-        }
-        r = session.post(f"{API}/auth/register", json=payload)
-        if r.status_code == 200:
-            return {"pin": pin, "token": r.json()["token"], "user": r.json()["user"]}
-    pytest.fail("Could not register admin")
+    # Public registration cannot create admins post-FT/PT. Use seeded Tempa R.
+    r = session.post(f"{API}/auth/login", json={"pin": "6641"})
+    if r.status_code != 200:
+        pytest.fail(f"Could not log in as seeded admin (PIN 6641): {r.text}")
+    body = r.json()
+    return {"pin": "6641", "token": body["token"], "user": body["user"]}
 
 
 def _auth(t):
@@ -243,14 +239,17 @@ class TestRosterLeaveIntegration:
         session.delete(f"{API}/leaves/{lid}", headers=_auth(user_ctx["token"]))
 
     def test_today_endpoint_returns_leave_when_today_marked(self, session):
-        # Register a fresh user, then add leave on today
+        # Register a fresh PT user with today marked as a working day so
+        # today qualifies for leave. Uses PT to sidestep FT day-count rules.
         pin = _rand_pin()
+        today_dow = date.today().weekday()
         r = session.post(f"{API}/auth/register", json={
             "name": "TEST Today Leave",
             "pin": pin,
-            "working_days": [0, 1, 2, 3, 4, 5, 6],  # all days working so today qualifies
-            "initial_day_off_date": _next_weekday(date.today().weekday() + 1 if date.today().weekday() < 6 else 0),
-            "is_admin": False,
+            "working_days": [today_dow],
+            "employment_type": "PT",
+            "pt_day_hours": {str(today_dow): 6},
+            "has_lunch_break": False,
         })
         assert r.status_code == 200, r.text
         token = r.json()["token"]

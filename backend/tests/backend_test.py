@@ -42,6 +42,9 @@ def regular_user(session):
             "working_days": [0, 1, 2, 3, 4],
             "initial_day_off_date": _next_weekday(2),  # Wednesday
             "is_admin": False,
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         }
         r = session.post(f"{API}/auth/register", json=payload)
         if r.status_code == 200:
@@ -51,19 +54,13 @@ def regular_user(session):
 
 @pytest.fixture(scope="module")
 def admin_user(session):
-    for _ in range(10):
-        pin = _rand_pin()
-        payload = {
-            "name": "TEST Admin",
-            "pin": pin,
-            "working_days": [0, 1, 2, 3, 4],
-            "initial_day_off_date": _next_weekday(4),  # Friday
-            "is_admin": True,
-        }
-        r = session.post(f"{API}/auth/register", json=payload)
-        if r.status_code == 200:
-            return {"pin": pin, "token": r.json()["token"], "user": r.json()["user"]}
-    pytest.fail("Could not register admin user")
+    # Public registration NEVER creates admins (per FT/PT feature update).
+    # Use the seeded admin (Tempa R, PIN 6641) which is always present.
+    r = session.post(f"{API}/auth/login", json={"pin": "6641"})
+    if r.status_code != 200:
+        pytest.fail(f"Could not log in as seeded admin (PIN 6641): {r.text}")
+    body = r.json()
+    return {"pin": "6641", "token": body["token"], "user": body["user"]}
 
 
 # ---------- Health ----------
@@ -95,6 +92,9 @@ class TestRegister:
             "working_days": [0, 1, 2, 3, 4],
             "initial_day_off_date": _next_weekday(2),
             "is_admin": False,
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         })
         assert r.status_code == 409
 
@@ -106,6 +106,9 @@ class TestRegister:
             "working_days": [0, 1, 2, 3, 4],
             "initial_day_off_date": _next_weekday(5),  # Saturday
             "is_admin": False,
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         })
         assert r.status_code == 400
 
@@ -153,8 +156,14 @@ class TestMe:
         new_anchor = _next_weekday(2)
         r = session.put(f"{API}/users/me",
             headers={"Authorization": f"Bearer {regular_user['token']}"},
-            json={"working_days": [0, 1, 2, 3, 4], "initial_day_off_date": new_anchor})
-        assert r.status_code == 200
+            json={
+                "working_days": [0, 1, 2, 3, 4],
+                "initial_day_off_date": new_anchor,
+                "employment_type": "FT",
+                "ft_schedule": "fortnight_9",
+                "has_lunch_break": True,
+            })
+        assert r.status_code == 200, r.text
         # GET to verify persistence
         r2 = session.get(f"{API}/users/me", headers={"Authorization": f"Bearer {regular_user['token']}"})
         assert r2.json()["initial_day_off_date"] == new_anchor
@@ -205,6 +214,9 @@ class TestRoster:
             "working_days": [0, 1, 2, 3, 4],
             "initial_day_off_date": anchor,
             "is_admin": False,
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         })
         assert reg.status_code == 200, reg.text
         token = reg.json()["token"]
@@ -222,7 +234,12 @@ class TestRoster:
 
     def test_rotation_next_fortnight(self, session, admin_user):
         """Next fortnight day-off rotates one working day earlier."""
-        anchor = date.fromisoformat(admin_user["user"]["initial_day_off_date"])  # Fri (dow=4)
+        anchor = date.fromisoformat(admin_user["user"]["initial_day_off_date"])
+        working = sorted(admin_user["user"]["working_days"])
+        anchor_dow = anchor.weekday()
+        idx = working.index(anchor_dow)
+        expected_next_dow = working[(idx - 1) % len(working)]
+
         anchor_week_mon = anchor - timedelta(days=anchor.weekday())
         w1_start = anchor_week_mon - timedelta(days=7)
         next_start = w1_start + timedelta(days=14)
@@ -233,8 +250,7 @@ class TestRoster:
         week2 = days[7:14]
         offs = [d for d in week2 if d["status"] == "day_off"]
         assert len(offs) == 1
-        # Should be Thursday (dow=3), one working day earlier from Fri
-        assert offs[0]["weekday"] == 3
+        assert offs[0]["weekday"] == expected_next_dow
 
     def test_today_endpoint(self, session, regular_user):
         r = session.get(f"{API}/roster/today",
@@ -317,6 +333,9 @@ class TestHolidays:
             "working_days": [0, 1, 2, 3, 4],
             "initial_day_off_date": "2026-01-28",  # Wednesday
             "is_admin": False,
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         }
         reg = session.post(f"{API}/auth/register", json=payload)
         assert reg.status_code == 200, reg.text

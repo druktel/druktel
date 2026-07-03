@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 5 — FT/PT feature deployment readiness. Backend: 53/53 pytest PASSED including a new dedicated FT/PT suite (15 tests) covering access gate 0000/0115, Tempa R (PIN 6641) admin login returning FT/fortnight_9, PT registration + raw pt_day_hours in roster (no lunch deduction), FT daily_9_5/daily_8 hour math with/without lunch, day-count constraints (fortnight_9=5, daily_9_5=4, daily_8=5), PUT /users/me schedule switching, and employment_type propagation in /discover /friends /posts /notifications. NOTE: review's expected total ~76h for admin fortnight is exactly what backend returns (8x8.5h + 1x8h short + 1 day off = 76h). Legacy regression tests updated to add ft_schedule field and to reuse the seeded admin (PIN 6641) since public registration now correctly refuses to create admins. Frontend: verified access gate (numeric keypad, tap 0000), PIN login (6641), Today screen 'Hi, Tempa' + green FT badge + Fortnight 76.0h, Roster tab FT badge + Grid view Week1 42.5h / Week2 33.5h / Fortnight 76.0h, Settings loads with Tempa R + FT badge + ADMIN role + FT/PT segmented toggle + 3 sub-schedule pills + '5/5 selected' counter (Sat/Sun visually disabled), Admin tab lists 66 users with correct green FT / purple PT badges next to each name, Register screen shows FT/PT toggle + sub-schedule pills + dynamic working-days counter that switches between 5/5 and 0/4 when toggling between fortnight_9 and daily_9_5. No red screen, no runtime errors. Only console warnings observed are the pre-existing shadow*/pointerEvents deprecations (iteration 4 already reported).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Today", "issues": ["Header shows 'Hi, Tempa' (the trailing ' R' is visually crowded by the FT badge and appears clipped in a 390px viewport screenshot). Purely cosmetic — full name is present in Admin+Settings and in the API response."]}
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props (RN Web)", "issue": "'shadow*' style props are deprecated. Use 'boxShadow'. Warning fires on login/gate + card mounts. Pre-existing; not a regression from FT/PT."},
+      {"component": "props.pointerEvents", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents' still fires on login screen. Already reported in iteration_4."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ft_pt_schedules.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_holidays_and_leaves.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/ft_pt_results.xml"
+  ],
+  "action_items": [
+    "Optional: migrate shadow* -> boxShadow and props.pointerEvents -> style.pointerEvents to silence RN-Web deprecation warnings.",
+    "Optional cosmetic: allow header name row to wrap or truncate more elegantly on narrow phones so 'Tempa R' is fully visible alongside the FT badge."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:147-216 — validate_schedule_payload cleanly centralizes cross-field validation for both register + update. Day-count constraints (FT_REQUIRED_DAYS) are enforced consistently. PT path correctly requires per-working-day hours and rejects unknown/missing keys with a helpful 400.",
+    "/app/backend/server.py:415-427 — PT branch of compute_day_status correctly ignores has_lunch_break (paid = raw hours), matching the FT/PT product rule. Verified end-to-end via test_register_pt_success_and_paid_hours.",
+    "/app/backend/server.py:566-567 — is_admin is hardcoded False in /auth/register regardless of payload. Legacy tests that used to pass is_admin:True to fabricate an admin now legitimately fail; updated legacy fixtures to reuse the seeded admin (PIN 6641).",
+    "/app/backend/server.py:1202-1222 — Startup seeding of Tempa R (admin PIN 6641) is idempotent (skips if pin_hash already present) and defaults to FT/fortnight_9 with lunch break, exactly matching the credentials file.",
+    "/app/frontend/src/api/client.ts — SchedulePayload and UserPublic types line up with the new backend contract. No leftover legacy field references."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ft_pt_schedules.py (NEW — 15 focused FT/PT tests)",
+    "/app/backend/tests/backend_test.py (added ft_schedule to legacy register payloads; admin_user fixture now logs in as seeded Tempa R; test_rotation_next_fortnight computes expected DOW from admin's actual anchor instead of hardcoded Fri->Thu)",
+    "/app/backend/tests/test_holidays_and_leaves.py (added ft_schedule to legacy payloads; admin_ctx uses seeded admin; test_today_endpoint_returns_leave_when_today_marked switched to PT to avoid FT day-count rule)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)",
+    "/app/test_reports/pytest/ft_pt_results.xml (new)",
+    "/app/test_reports/iteration_5.json"
+  ],
+  "success_rate": {"backend": "100% (53/53)", "frontend": "100% for the FT/PT flows re-tested (gate 0000, login 6641, Today+FT badge, Roster Grid+FT badge, Settings schedule form, Admin user list w/ FT+PT badges, Register FT/PT toggle + sub-schedule + counter)"},
+  "seed_data_creation": "Backend test suite created ~9 TEST_ users (TEST PT, TEST D95 Good, TEST D95 NoLunch, TEST D8 Lunch, TEST D8 NoLunch, TEST Social PT, TEST Social FT, plus a few random-PIN fixtures). Admin tab now shows 66 employees (accumulated across iterations 1-5). No production data touched; Tempa R (PIN 6641) is intact and remains the only admin.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "1) Backend registration now IGNORES is_admin in the payload — always False. Use PIN 6641 (Tempa R) via login for any admin-scoped test. 2) FT day-count rule enforced by FT_REQUIRED_DAYS in server.py: fortnight_9=5, daily_9_5=4, daily_8=5. Any registration/update with a mismatch returns 400. 3) PT is 'paid hours as entered' — do NOT expect lunch deduction on PT roster hours even if has_lunch_break=true. 4) Fortnight totals for standard FT Mon-Fri worker = 76h (8 regular*8.5 + 1 short*8 + 1 day_off*0). 5) Gate on frontend is a NUMERIC KEYPAD — tap page.get_by_text('0'/'1'/…, exact=True).first four times; no text input. Login PIN keypad has testIDs 'pin-key-<digit>'. Register screen testIDs: input-name, input-pin, et-FT, et-PT, sched-fortnight_9, sched-daily_9_5, sched-daily_8, working-day-0..6, input-dayoff, register-submit. Admin tab uses admin-user-<id> and ftpt-badge-<FT|PT>.",
+  "rca_of_issue": "N/A — no production bugs surfaced. All previously-broken legacy tests were pre-existing test debt caused by the FT/PT schema change (legacy tests didn't send ft_schedule and tried to register admins via public API); fixed those tests only, no server code changes."
+}
