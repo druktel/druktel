@@ -14,6 +14,10 @@ import { Calendar } from "react-native-calendars";
 import { api, RosterResponse, DayEntry } from "@/src/api/client";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
+const LEAVE_COLOR = "#7C3AED";
+const PUBLIC_HOLIDAY_COLOR = "#DC2626";
+const SCHOOL_HOLIDAY_COLOR = "#2563EB";
+
 function formatISO(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -37,7 +41,7 @@ function statusColor(status: DayEntry["status"]) {
     case "day_off":
       return { bg: colors.surfaceTertiary, text: colors.onSurfaceTertiary, label: "OFF" };
     case "leave":
-      return { bg: "#7C3AED", text: "#fff", label: "LEAVE" };
+      return { bg: LEAVE_COLOR, text: "#fff", label: "LEAVE" };
     case "non_working":
       return { bg: "transparent", text: colors.muted, label: "—" };
   }
@@ -163,17 +167,17 @@ export default function RosterScreen() {
         bgColor = colors.warning;
         textColor = "#fff";
       } else if (d.status === "leave") {
-        bgColor = "#7C3AED";
+        bgColor = LEAVE_COLOR;
         textColor = "#fff";
       } else if (d.status === "day_off") {
         bgColor = colors.surfaceTertiary;
         textColor = colors.onSurface;
       }
       if (d.public_holiday) {
-        dots.push({ color: colors.error, key: "ph" });
+        dots.push({ color: PUBLIC_HOLIDAY_COLOR, key: "ph" });
       }
       if (d.school_holiday) {
-        dots.push({ color: "#7C3AED", key: "sh" });
+        dots.push({ color: SCHOOL_HOLIDAY_COLOR, key: "sh" });
       }
       marks[d.date] = {
         customStyles: {
@@ -398,8 +402,14 @@ function WeekBlock({
                   borderWidth: d.is_today ? 2 : 0,
                 },
                 !isColored && styles.dayCellSoft,
+                d.public_holiday ? styles.dayCellPublicHoliday : null,
               ]}
             >
+              {d.public_holiday && (
+                <View style={styles.phBadge} testID={`${testIDPrefix}-ph-badge-${d.date}`}>
+                  <Text style={styles.phBadgeText}>PH</Text>
+                </View>
+              )}
               <Text
                 style={[
                   styles.dayName,
@@ -417,14 +427,9 @@ function WeekBlock({
                 {new Date(d.date + "T00:00:00").getDate()}
               </Text>
               <Text style={[styles.dayLabel, { color: c.text }]}>{c.label}</Text>
-              {(d.public_holiday || d.school_holiday) && (
-                <View style={styles.dotRow}>
-                  {d.public_holiday && (
-                    <View style={[styles.tinyDot, { backgroundColor: colors.error }]} />
-                  )}
-                  {d.school_holiday && (
-                    <View style={[styles.tinyDot, { backgroundColor: "#7C3AED" }]} />
-                  )}
+              {d.school_holiday && (
+                <View style={styles.dotRow} testID={`${testIDPrefix}-sh-dot-${d.date}`}>
+                  <View style={[styles.tinyDot, { backgroundColor: SCHOOL_HOLIDAY_COLOR }]} />
                 </View>
               )}
             </View>
@@ -487,13 +492,13 @@ function DayDetailCard({
       )}
       {entry.public_holiday && (
         <View style={styles.holidayTag}>
-          <View style={[styles.tinyDot, { backgroundColor: colors.error }]} />
+          <View style={[styles.tinyDot, { backgroundColor: PUBLIC_HOLIDAY_COLOR }]} />
           <Text style={styles.holidayText}>Public holiday: {entry.public_holiday}</Text>
         </View>
       )}
       {entry.school_holiday && (
         <View style={styles.holidayTag}>
-          <View style={[styles.tinyDot, { backgroundColor: "#7C3AED" }]} />
+          <View style={[styles.tinyDot, { backgroundColor: SCHOOL_HOLIDAY_COLOR }]} />
           <Text style={styles.holidayText}>{entry.school_holiday}</Text>
         </View>
       )}
@@ -535,11 +540,11 @@ function Legend({ showHolidays }: { showHolidays?: boolean } = {}) {
       <LegendItem color={colors.brand} label="9h shift" />
       <LegendItem color={colors.warning} label="8.5h short" />
       <LegendItem color={colors.surfaceTertiary} label="Day off" isLight />
-      <LegendItem color="#7C3AED" label="Personal leave" />
+      <LegendItem color={LEAVE_COLOR} label="Personal leave" />
       {showHolidays && (
         <>
-          <LegendItem color={colors.error} label="WA public holiday" isDot />
-          <LegendItem color="#7C3AED" label="WA school holidays" isDot />
+          <LegendItem color={PUBLIC_HOLIDAY_COLOR} label="WA public holiday" isDot />
+          <LegendItem color={SCHOOL_HOLIDAY_COLOR} label="WA school holidays" isDot />
         </>
       )}
     </View>
@@ -646,6 +651,26 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   dayCellSoft: { backgroundColor: colors.surfaceTertiary },
+  dayCellPublicHoliday: {
+    borderWidth: 2,
+    borderColor: PUBLIC_HOLIDAY_COLOR,
+  },
+  phBadge: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    backgroundColor: PUBLIC_HOLIDAY_COLOR,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    zIndex: 1,
+  },
+  phBadgeText: {
+    color: "#fff",
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
   dayName: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   dayDate: { fontSize: 18, fontWeight: "700", marginTop: 2 },
   dayLabel: { fontSize: 11, fontWeight: "700", marginTop: 4 },
