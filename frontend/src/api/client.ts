@@ -32,6 +32,14 @@ export type Leave = {
   created_at: string;
 };
 
+export type AccessCode = {
+  id: string;
+  code: string;
+  note?: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
 export type RosterResponse = {
   start_date: string;
   end_date: string;
@@ -144,4 +152,18 @@ export const api = {
     }),
   deleteLeave: (id: string) =>
     request<{ ok: boolean }>(`/leaves/${id}`, { method: "DELETE" }),
+  verifyAccessCode: (code: string) =>
+    request<{ ok: boolean; code_id: string }>("/access/verify", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  adminListAccessCodes: () =>
+    request<{ codes: AccessCode[] }>("/admin/access-codes"),
+  adminCreateAccessCode: (code: string, note?: string) =>
+    request<AccessCode>("/admin/access-codes", {
+      method: "POST",
+      body: JSON.stringify({ code, note }),
+    }),
+  adminDeleteAccessCode: (id: string) =>
+    request<{ ok: boolean }>(`/admin/access-codes/${id}`, { method: "DELETE" }),
 };

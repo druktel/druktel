@@ -142,6 +142,31 @@ class LeaveCreate(BaseModel):
         return v
 
 
+class AccessCode(BaseModel):
+    id: str
+    code: str
+    note: Optional[str] = None
+    is_active: bool
+    created_at: str
+
+
+class AccessCodeCreate(BaseModel):
+    code: str
+    note: Optional[str] = None
+
+    @field_validator('code')
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        v = v.strip()
+        if not (len(v) == 4 and v.isdigit()):
+            raise ValueError("Access code must be exactly 4 digits")
+        return v
+
+
+class AccessVerifyRequest(BaseModel):
+    code: str
+
+
 class RosterResponse(BaseModel):
     start_date: str
     end_date: str
@@ -261,6 +286,18 @@ async def get_user_leaves_map(user_id: str, start: date, end: date) -> Dict[str,
 @api_router.get("/")
 async def root():
     return {"message": "Profile API"}
+
+
+# ---------- Access gate (admin-managed codes) ----------
+@api_router.post("/access/verify")
+async def verify_access_code(payload: AccessVerifyRequest):
+    code = payload.code.strip()
+    if not (len(code) == 4 and code.isdigit()):
+        raise HTTPException(status_code=400, detail="Code must be 4 digits")
+    doc = await db.access_codes.find_one({"code": code, "is_active": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=401, detail="Invalid access code")
+    return {"ok": True, "code_id": doc["id"]}
 
 
 @api_router.post("/auth/register", response_model=AuthResponse)
@@ -491,6 +528,44 @@ async def admin_refresh_holidays(_: dict = Depends(require_admin)):
     return {"refreshed": result}
 
 
+# ---------- Admin: access codes ----------
+@api_router.get("/admin/access-codes")
+async def admin_list_access_codes(_: dict = Depends(require_admin)):
+    docs = await db.access_codes.find({}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    return {"codes": docs}
+
+
+@api_router.post("/admin/access-codes", response_model=AccessCode)
+async def admin_create_access_code(payload: AccessCodeCreate, _: dict = Depends(require_admin)):
+    existing = await db.access_codes.find_one({"code": payload.code})
+    if existing:
+        raise HTTPException(status_code=409, detail="This 4-digit code is already in use")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "code": payload.code,
+        "note": (payload.note or "").strip(),
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.access_codes.insert_one(doc)
+    doc.pop("_id", None)
+    return AccessCode(**doc)
+
+
+@api_router.delete("/admin/access-codes/{code_id}")
+async def admin_delete_access_code(code_id: str, _: dict = Depends(require_admin)):
+    total = await db.access_codes.count_documents({"is_active": True})
+    target = await db.access_codes.find_one({"id": code_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Access code not found")
+    if target.get("is_active") and total <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the last active access code")
+    res = await db.access_codes.delete_one({"id": code_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Access code not found")
+    return {"ok": True}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -509,6 +584,18 @@ async def startup_indexes():
     await db.sessions.create_index("token", unique=True)
     await db.leaves.create_index([("user_id", 1), ("date", 1)], unique=True)
     await db.leaves.create_index("id", unique=True)
+    await db.access_codes.create_index("code", unique=True)
+    await db.access_codes.create_index("id", unique=True)
+    # Seed a default access code so the very first admin can get past the gate.
+    if await db.access_codes.count_documents({}) == 0:
+        await db.access_codes.insert_one({
+            "id": str(uuid.uuid4()),
+            "code": "0000",
+            "note": "Default bootstrap code — replace via Admin → Access codes.",
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info("Seeded default access code '0000'. Change via Admin → Access codes.")
 
 
 @app.on_event("shutdown")
