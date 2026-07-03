@@ -11,6 +11,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +22,8 @@ import {
   FriendEntry,
   FeedItem,
   Post,
+  Reply,
+  Notification,
   UserPublic,
 } from "@/src/api/client";
 import { LogoMarkCompact } from "@/src/components/Brand";
@@ -69,6 +72,18 @@ export default function FeedScreen() {
   const [composerVis, setComposerVis] = useState<"public" | "friends">("public");
   const [posting, setPosting] = useState(false);
 
+  // Post interactions
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [repliesByPost, setRepliesByPost] = useState<Record<string, Reply[]>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyBusy, setReplyBusy] = useState<string | null>(null);
+  const [likeBusy, setLikeBusy] = useState<string | null>(null);
+
+  // Notifications
+  const [notifs, setNotifs] = useState<Notification[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
+
   useEffect(() => {
     (async () => {
       try {
@@ -83,16 +98,19 @@ export default function FeedScreen() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [d, f, feedResp, p] = await Promise.all([
+      const [d, f, feedResp, p, n] = await Promise.all([
         api.discover(30),
         api.listFriends(),
         api.feed(14),
         api.listPosts(40),
+        api.listNotifications(),
       ]);
       setDiscover(d.users);
       setFriends(f.friends);
       setFeed(feedResp.items);
       setPosts(p.posts);
+      setNotifs(n.notifications);
+      setUnread(n.unread);
     } catch (e: any) {
       setError(e.message || "Failed to load");
     } finally {
@@ -168,6 +186,99 @@ export default function FeedScreen() {
     return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   };
 
+  const toggleLike = async (postId: string) => {
+    setLikeBusy(postId);
+    // Optimistic update
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              liked_by_me: !p.liked_by_me,
+              like_count: p.like_count + (p.liked_by_me ? -1 : 1),
+            }
+          : p,
+      ),
+    );
+    try {
+      await api.toggleLike(postId);
+    } catch (e: any) {
+      setError(e.message || "Failed to like");
+      await load();
+    } finally {
+      setLikeBusy(null);
+    }
+  };
+
+  const toggleReplies = async (postId: string) => {
+    if (expandedPostId === postId) {
+      setExpandedPostId(null);
+      return;
+    }
+    setExpandedPostId(postId);
+    if (!repliesByPost[postId]) {
+      try {
+        const r = await api.listReplies(postId);
+        setRepliesByPost((prev) => ({ ...prev, [postId]: r.replies }));
+      } catch (e: any) {
+        setError(e.message || "Failed to load replies");
+      }
+    }
+  };
+
+  const submitReply = async (postId: string) => {
+    const text = (replyDrafts[postId] || "").trim();
+    if (!text) return;
+    setReplyBusy(postId);
+    try {
+      const r = await api.createReply(postId, text);
+      setRepliesByPost((prev) => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), r],
+      }));
+      setReplyDrafts((prev) => ({ ...prev, [postId]: "" }));
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, reply_count: p.reply_count + 1 } : p,
+        ),
+      );
+    } catch (e: any) {
+      setError(e.message || "Failed to reply");
+    } finally {
+      setReplyBusy(null);
+    }
+  };
+
+  const removeReply = async (postId: string, replyId: string) => {
+    try {
+      await api.deleteReply(postId, replyId);
+      setRepliesByPost((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] || []).filter((r) => r.id !== replyId),
+      }));
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, reply_count: Math.max(0, p.reply_count - 1) } : p,
+        ),
+      );
+    } catch (e: any) {
+      setError(e.message || "Failed to delete reply");
+    }
+  };
+
+  const openNotifs = async () => {
+    setNotifOpen(true);
+    try {
+      await api.markNotificationsRead();
+      setUnread(0);
+      // Refresh so items show as read
+      const n = await api.listNotifications();
+      setNotifs(n.notifications);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <KeyboardAvoidingView
@@ -191,10 +302,26 @@ export default function FeedScreen() {
         <View style={styles.brandBar}>
           <LogoMarkCompact />
         </View>
-        <Text style={styles.title}>Team feed</Text>
-        <Text style={styles.subtitle}>
-          Follow teammates to see their upcoming day-offs and leave.
-        </Text>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Team feed</Text>
+            <Text style={styles.subtitle}>
+              Follow teammates to see their upcoming day-offs and leave.
+            </Text>
+          </View>
+          <TouchableOpacity
+            testID="open-notifs"
+            style={styles.notifBtn}
+            onPress={openNotifs}
+          >
+            <Ionicons name="notifications-outline" size={22} color={colors.onSurface} />
+            {unread > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unread > 9 ? "9+" : unread}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
 
         {error && (
           <View style={styles.errBox}>
@@ -308,6 +435,95 @@ export default function FeedScreen() {
                     )}
                   </View>
                   <Text style={styles.postText}>{p.text}</Text>
+
+                  <View style={styles.postActions}>
+                    <TouchableOpacity
+                      testID={`like-${p.id}`}
+                      onPress={() => toggleLike(p.id)}
+                      disabled={likeBusy === p.id}
+                      style={styles.actionBtn}
+                    >
+                      <Ionicons
+                        name={p.liked_by_me ? "heart" : "heart-outline"}
+                        size={18}
+                        color={p.liked_by_me ? "#DC2626" : colors.onSurfaceTertiary}
+                      />
+                      <Text style={[styles.actionText, p.liked_by_me && { color: "#DC2626" }]}>
+                        {p.like_count}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID={`reply-toggle-${p.id}`}
+                      onPress={() => toggleReplies(p.id)}
+                      style={styles.actionBtn}
+                    >
+                      <Ionicons
+                        name="chatbubble-outline"
+                        size={17}
+                        color={colors.onSurfaceTertiary}
+                      />
+                      <Text style={styles.actionText}>{p.reply_count}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {expandedPostId === p.id && (
+                    <View style={styles.repliesBox} testID={`replies-box-${p.id}`}>
+                      {(repliesByPost[p.id] || []).map((r) => (
+                        <View key={r.id} style={styles.replyRow} testID={`reply-${r.id}`}>
+                          <View style={styles.replyAvatar}>
+                            <Text style={styles.replyAvatarText}>
+                              {initials(r.author_name)}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.replyAuthor}>
+                              {r.author_name}{" "}
+                              <Text style={styles.replyMeta}>
+                                · {formatPostTime(r.created_at)}
+                              </Text>
+                            </Text>
+                            <Text style={styles.replyText}>{r.text}</Text>
+                          </View>
+                          {me?.id === r.user_id && (
+                            <TouchableOpacity
+                              testID={`delete-reply-${r.id}`}
+                              onPress={() => removeReply(p.id, r.id)}
+                            >
+                              <Ionicons name="close" size={14} color={colors.muted} />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
+                      <View style={styles.replyComposer}>
+                        <TextInput
+                          testID={`reply-input-${p.id}`}
+                          value={replyDrafts[p.id] || ""}
+                          onChangeText={(t) =>
+                            setReplyDrafts((prev) => ({ ...prev, [p.id]: t }))
+                          }
+                          placeholder="Reply..."
+                          placeholderTextColor={colors.muted}
+                          style={styles.replyInput}
+                          maxLength={300}
+                        />
+                        <TouchableOpacity
+                          testID={`reply-send-${p.id}`}
+                          onPress={() => submitReply(p.id)}
+                          disabled={replyBusy === p.id || !(replyDrafts[p.id] || "").trim()}
+                          style={[
+                            styles.replySendBtn,
+                            (replyBusy === p.id || !(replyDrafts[p.id] || "").trim()) && { opacity: 0.5 },
+                          ]}
+                        >
+                          {replyBusy === p.id ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <Ionicons name="send" size={14} color="#fff" />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -443,6 +659,68 @@ export default function FeedScreen() {
         )}
       </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={notifOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setNotifOpen(false)}
+      >
+        <SafeAreaView style={styles.notifRoot} edges={["top", "bottom"]} testID="notif-modal">
+          <View style={styles.notifHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.notifTitle}>Notifications</Text>
+              <Text style={styles.notifSub}>{notifs.length} total</Text>
+            </View>
+            <TouchableOpacity
+              testID="close-notifs"
+              onPress={() => setNotifOpen(false)}
+              style={styles.closeNotifBtn}
+            >
+              <Ionicons name="close" size={22} color={colors.onSurface} />
+            </TouchableOpacity>
+          </View>
+          {notifs.length === 0 ? (
+            <View style={styles.notifEmpty}>
+              <Ionicons name="notifications-off-outline" size={44} color={colors.muted} />
+              <Text style={styles.notifEmptyText}>Nothing new</Text>
+              <Text style={styles.notifEmptyHelp}>
+                You&apos;ll be notified here when friends post or reply to your posts.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={styles.notifList}>
+              {notifs.map((n) => (
+                <View
+                  key={n.id}
+                  style={[styles.notifRow, !n.read && styles.notifUnread]}
+                  testID={`notif-${n.id}`}
+                >
+                  <View style={styles.notifIcon}>
+                    <Ionicons
+                      name={n.type === "friend_post" ? "megaphone-outline" : "chatbubble-ellipses-outline"}
+                      size={18}
+                      color={colors.brand}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.notifText}>
+                      <Text style={styles.notifActor}>{n.actor_name}</Text>{" "}
+                      {n.type === "friend_post" ? "shared a new post" : "replied to your post"}
+                    </Text>
+                    {n.text ? (
+                      <Text style={styles.notifSnippet} numberOfLines={2}>
+                        {n.text}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.notifTime}>{formatPostTime(n.created_at)}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -545,6 +823,184 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  postActions: {
+    flexDirection: "row",
+    gap: spacing.lg,
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 4,
+  },
+  actionText: {
+    color: colors.onSurfaceTertiary,
+    fontWeight: "600",
+    fontSize: 13,
+    minWidth: 14,
+  },
+  repliesBox: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    gap: spacing.sm,
+  },
+  replyRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+  },
+  replyAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.brandTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  replyAvatarText: {
+    color: colors.onBrandTertiary,
+    fontWeight: "800",
+    fontSize: 11,
+  },
+  replyAuthor: {
+    color: colors.onSurface,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  replyMeta: {
+    color: colors.muted,
+    fontWeight: "400",
+    fontSize: 11,
+  },
+  replyText: {
+    color: colors.onSurface,
+    fontSize: 13,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  replyComposer: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  replyInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: colors.onSurface,
+  },
+  replySendBtn: {
+    backgroundColor: colors.brand,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+  },
+  notifBtn: {
+    padding: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    position: "relative",
+  },
+  notifBadge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    backgroundColor: colors.error,
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  notifBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+
+  notifRoot: { flex: 1, backgroundColor: colors.surface },
+  notifHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.xl,
+    paddingBottom: spacing.md,
+  },
+  notifTitle: { fontSize: 22, fontWeight: "700", color: colors.onSurface },
+  notifSub: { color: colors.onSurfaceTertiary, marginTop: 2 },
+  closeNotifBtn: {
+    padding: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  notifEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.md,
+    padding: spacing.xxxl,
+  },
+  notifEmptyText: {
+    color: colors.onSurface,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  notifEmptyHelp: {
+    color: colors.onSurfaceTertiary,
+    textAlign: "center",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  notifList: { padding: spacing.xl, gap: spacing.sm },
+  notifRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  notifUnread: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandTertiary,
+  },
+  notifIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notifText: { color: colors.onSurface, fontSize: 14 },
+  notifActor: { fontWeight: "800" },
+  notifSnippet: {
+    color: colors.onSurfaceTertiary,
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  notifTime: { color: colors.muted, fontSize: 11, marginTop: 4 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

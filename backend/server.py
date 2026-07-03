@@ -197,6 +197,9 @@ class Post(BaseModel):
     text: str
     visibility: str  # "public" | "friends"
     created_at: str
+    like_count: int = 0
+    liked_by_me: bool = False
+    reply_count: int = 0
 
 
 class PostCreate(BaseModel):
@@ -219,6 +222,41 @@ class PostCreate(BaseModel):
         if v not in ("public", "friends"):
             raise ValueError("visibility must be 'public' or 'friends'")
         return v
+
+
+class Reply(BaseModel):
+    id: str
+    post_id: str
+    user_id: str
+    author_name: str
+    text: str
+    created_at: str
+
+
+class ReplyCreate(BaseModel):
+    text: str
+
+    @field_validator('text')
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Reply cannot be empty")
+        if len(v) > 300:
+            raise ValueError("Reply too long (max 300 chars)")
+        return v
+
+
+class Notification(BaseModel):
+    id: str
+    user_id: str  # recipient
+    type: str  # "friend_post" | "reply"
+    actor_id: str
+    actor_name: str
+    post_id: Optional[str] = None
+    text: Optional[str] = None
+    read: bool = False
+    created_at: str
 
 
 class RosterResponse(BaseModel):
@@ -677,6 +715,42 @@ async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
 
 
 # ---------- Posts (short text updates) ----------
+def _serialize_post(doc: dict, viewer_id: str) -> Post:
+    liked_by = doc.get("liked_by") or []
+    return Post(
+        id=doc["id"],
+        user_id=doc["user_id"],
+        author_name=doc.get("author_name", ""),
+        text=doc["text"],
+        visibility=doc["visibility"],
+        created_at=doc["created_at"],
+        like_count=len(liked_by),
+        liked_by_me=viewer_id in liked_by,
+        reply_count=int(doc.get("reply_count", 0)),
+    )
+
+
+async def _notify_friends_of_post(author: dict, post_doc: dict) -> None:
+    edges = await db.friends.find({"user_id": author["id"]}, {"_id": 0}).to_list(500)
+    if not edges:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    snippet = post_doc["text"][:80]
+    notif_docs = [{
+        "id": str(uuid.uuid4()),
+        "user_id": edge["friend_id"],
+        "type": "friend_post",
+        "actor_id": author["id"],
+        "actor_name": author["name"],
+        "post_id": post_doc["id"],
+        "text": snippet,
+        "read": False,
+        "created_at": now,
+    } for edge in edges]
+    if notif_docs:
+        await db.notifications.insert_many(notif_docs)
+
+
 @api_router.post("/posts", response_model=Post)
 async def create_post(payload: PostCreate, user: dict = Depends(get_current_user)):
     doc = {
@@ -686,10 +760,15 @@ async def create_post(payload: PostCreate, user: dict = Depends(get_current_user
         "text": payload.text,
         "visibility": payload.visibility,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "liked_by": [],
+        "reply_count": 0,
     }
     await db.posts.insert_one(doc)
+    # Notify all friends that this user has posted (both visibilities apply
+    # since friends can see both public + friends-only posts from friends).
+    await _notify_friends_of_post(user, doc)
     doc.pop("_id", None)
-    return Post(**doc)
+    return _serialize_post(doc, user["id"])
 
 
 @api_router.get("/posts")
@@ -698,9 +777,6 @@ async def list_posts(limit: int = 40, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="limit must be 1..100")
     edges = await db.friends.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
     friend_ids = [e["friend_id"] for e in edges]
-    # A post is visible if:
-    #   - visibility = "public", OR
-    #   - visibility = "friends" AND (user_id == self OR user_id in my friends)
     friend_scope = friend_ids + [user["id"]]
     query = {
         "$or": [
@@ -714,7 +790,7 @@ async def list_posts(limit: int = 40, user: dict = Depends(get_current_user)):
         .limit(limit)
         .to_list(limit)
     )
-    return {"posts": docs}
+    return {"posts": [_serialize_post(d, user["id"]).model_dump() for d in docs]}
 
 
 @api_router.delete("/posts/{post_id}")
@@ -722,6 +798,108 @@ async def delete_post(post_id: str, user: dict = Depends(get_current_user)):
     res = await db.posts.delete_one({"id": post_id, "user_id": user["id"]})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Post not found")
+    # Best-effort cleanup of replies + notifications tied to this post.
+    await db.replies.delete_many({"post_id": post_id})
+    await db.notifications.delete_many({"post_id": post_id})
+    return {"ok": True}
+
+
+@api_router.post("/posts/{post_id}/like")
+async def toggle_like(post_id: str, user: dict = Depends(get_current_user)):
+    post = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    liked_by = post.get("liked_by") or []
+    if user["id"] in liked_by:
+        await db.posts.update_one({"id": post_id}, {"$pull": {"liked_by": user["id"]}})
+        liked = False
+    else:
+        await db.posts.update_one({"id": post_id}, {"$addToSet": {"liked_by": user["id"]}})
+        liked = True
+    fresh = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    return {
+        "ok": True,
+        "liked": liked,
+        "like_count": len((fresh or {}).get("liked_by") or []),
+    }
+
+
+@api_router.get("/posts/{post_id}/replies")
+async def list_replies(post_id: str, user: dict = Depends(get_current_user)):
+    docs = await db.replies.find({"post_id": post_id}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    return {"replies": docs}
+
+
+@api_router.post("/posts/{post_id}/replies", response_model=Reply)
+async def create_reply(post_id: str, payload: ReplyCreate, user: dict = Depends(get_current_user)):
+    post = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "post_id": post_id,
+        "user_id": user["id"],
+        "author_name": user["name"],
+        "text": payload.text,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.replies.insert_one(doc)
+    await db.posts.update_one({"id": post_id}, {"$inc": {"reply_count": 1}})
+    # Notify post author (if not replying to yourself).
+    if post["user_id"] != user["id"]:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": post["user_id"],
+            "type": "reply",
+            "actor_id": user["id"],
+            "actor_name": user["name"],
+            "post_id": post_id,
+            "text": payload.text[:80],
+            "read": False,
+            "created_at": doc["created_at"],
+        })
+    doc.pop("_id", None)
+    return Reply(**doc)
+
+
+@api_router.delete("/posts/{post_id}/replies/{reply_id}")
+async def delete_reply(post_id: str, reply_id: str, user: dict = Depends(get_current_user)):
+    res = await db.replies.delete_one({"id": reply_id, "post_id": post_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Reply not found")
+    await db.posts.update_one({"id": post_id}, {"$inc": {"reply_count": -1}})
+    return {"ok": True}
+
+
+# ---------- Notifications ----------
+@api_router.get("/notifications")
+async def list_notifications(limit: int = 30, user: dict = Depends(get_current_user)):
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be 1..100")
+    docs = await (
+        db.notifications.find({"user_id": user["id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
+    unread = await db.notifications.count_documents({"user_id": user["id"], "read": False})
+    return {"notifications": docs, "unread": unread}
+
+
+@api_router.post("/notifications/mark-read")
+async def mark_all_read(user: dict = Depends(get_current_user)):
+    await db.notifications.update_many(
+        {"user_id": user["id"], "read": False},
+        {"$set": {"read": True}},
+    )
+    return {"ok": True}
+
+
+@api_router.delete("/notifications/{notif_id}")
+async def delete_notification(notif_id: str, user: dict = Depends(get_current_user)):
+    res = await db.notifications.delete_one({"id": notif_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
     return {"ok": True}
 
 
@@ -831,6 +1009,8 @@ async def startup_indexes():
     await db.friends.create_index([("user_id", 1), ("friend_id", 1)], unique=True)
     await db.posts.create_index("created_at")
     await db.posts.create_index("user_id")
+    await db.replies.create_index([("post_id", 1), ("created_at", 1)])
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
 
     # Seed the standard employee access code so new employees can pass the
     # gate. Admins can create additional codes via the Admin tab.

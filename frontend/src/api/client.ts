@@ -71,6 +71,30 @@ export type Post = {
   text: string;
   visibility: "public" | "friends";
   created_at: string;
+  like_count: number;
+  liked_by_me: boolean;
+  reply_count: number;
+};
+
+export type Reply = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  author_name: string;
+  text: string;
+  created_at: string;
+};
+
+export type Notification = {
+  id: string;
+  user_id: string;
+  type: "friend_post" | "reply";
+  actor_id: string;
+  actor_name: string;
+  post_id?: string | null;
+  text?: string | null;
+  read: boolean;
+  created_at: string;
 };
 
 export type RosterResponse = {
@@ -218,4 +242,26 @@ export const api = {
     }),
   deletePost: (id: string) =>
     request<{ ok: boolean }>(`/posts/${id}`, { method: "DELETE" }),
+  toggleLike: (postId: string) =>
+    request<{ ok: boolean; liked: boolean; like_count: number }>(
+      `/posts/${postId}/like`,
+      { method: "POST" },
+    ),
+  listReplies: (postId: string) =>
+    request<{ replies: Reply[] }>(`/posts/${postId}/replies`),
+  createReply: (postId: string, text: string) =>
+    request<Reply>(`/posts/${postId}/replies`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  deleteReply: (postId: string, replyId: string) =>
+    request<{ ok: boolean }>(`/posts/${postId}/replies/${replyId}`, {
+      method: "DELETE",
+    }),
+  listNotifications: () =>
+    request<{ notifications: Notification[]; unread: number }>("/notifications"),
+  markNotificationsRead: () =>
+    request<{ ok: boolean }>("/notifications/mark-read", { method: "POST" }),
+  deleteNotification: (id: string) =>
+    request<{ ok: boolean }>(`/notifications/${id}`, { method: "DELETE" }),
 };
