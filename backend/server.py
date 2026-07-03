@@ -248,10 +248,12 @@ def build_roster(user: dict, start: date, num_days: int, leaves: Optional[Dict[s
 
 
 async def get_user_leaves_map(user_id: str, start: date, end: date) -> Dict[str, str]:
+    # Bounded by date range; a fortnight/quarter view can never realistically
+    # exceed a few hundred leave rows per user. Cap defensively.
     docs = await db.leaves.find(
         {"user_id": user_id, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}},
         {"_id": 0},
-    ).to_list(1000)
+    ).to_list(500)
     return {d["date"]: d.get("note", "") for d in docs}
 
 
@@ -404,10 +406,20 @@ async def get_holidays(start: Optional[str] = None, end: Optional[str] = None):
 
 # ---------- Personal leave ----------
 @api_router.get("/leaves")
-async def list_leaves(user: dict = Depends(get_current_user)):
-    docs = await db.leaves.find({"user_id": user["id"]}, {"_id": 0, "user_id": 0}).to_list(1000)
-    docs.sort(key=lambda x: x["date"])
-    return {"leaves": docs}
+async def list_leaves(limit: int = 100, skip: int = 0, user: dict = Depends(get_current_user)):
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be 1..500")
+    if skip < 0:
+        raise HTTPException(status_code=400, detail="skip must be >= 0")
+    cursor = (
+        db.leaves.find({"user_id": user["id"]}, {"_id": 0, "user_id": 0})
+        .sort("date", 1)
+        .skip(skip)
+        .limit(limit)
+    )
+    docs = await cursor.to_list(limit)
+    total = await db.leaves.count_documents({"user_id": user["id"]})
+    return {"leaves": docs, "total": total, "limit": limit, "skip": skip}
 
 
 @api_router.post("/leaves", response_model=Leave)
@@ -437,9 +449,20 @@ async def delete_leave(leave_id: str, user: dict = Depends(get_current_user)):
 
 # ---------- Admin ----------
 @api_router.get("/admin/users")
-async def admin_list_users(_: dict = Depends(require_admin)):
-    users = await db.users.find({}, {"_id": 0, "pin_hash": 0}).to_list(1000)
-    return {"users": users}
+async def admin_list_users(limit: int = 100, skip: int = 0, _: dict = Depends(require_admin)):
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be 1..500")
+    if skip < 0:
+        raise HTTPException(status_code=400, detail="skip must be >= 0")
+    cursor = (
+        db.users.find({}, {"_id": 0, "pin_hash": 0})
+        .sort("created_at", 1)
+        .skip(skip)
+        .limit(limit)
+    )
+    users = await cursor.to_list(limit)
+    total = await db.users.count_documents({})
+    return {"users": users, "total": total, "limit": limit, "skip": skip}
 
 
 @api_router.get("/admin/roster/{user_id}", response_model=RosterResponse)
