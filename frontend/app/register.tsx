@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
+import { Logo, BrandFooter } from "@/src/components/Brand";
 import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -118,6 +119,11 @@ export default function RegisterScreen() {
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
 
+          <View style={styles.brandRow}>
+            <Logo size={44} />
+            <Text style={styles.brandName}>Profile</Text>
+          </View>
+
           <Text style={styles.h1}>Set up your roster</Text>
           <Text style={styles.subtitle}>
             Pick a unique 4-digit PIN, your working days, and an upcoming
@@ -219,6 +225,7 @@ export default function RegisterScreen() {
               <Text style={styles.ctaText}>Create account</Text>
             )}
           </TouchableOpacity>
+          <BrandFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -234,6 +241,18 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   backText: { color: colors.onSurface, fontSize: 15 },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  brandName: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: colors.onSurface,
+    letterSpacing: -0.5,
+  },
   h1: {
     fontSize: 28,
     fontWeight: "700",

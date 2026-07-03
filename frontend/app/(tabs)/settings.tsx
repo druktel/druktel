@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { api, UserPublic, Leave } from "@/src/api/client";
+import { BrandFooter } from "@/src/components/Brand";
 import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -345,6 +346,7 @@ export default function SettingsScreen() {
               </Text>
             )}
           </View>
+          <BrandFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -12,6 +12,7 @@ import { useRouter, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/api/client";
+import { Logo, BrandFooter } from "@/src/components/Brand";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const HERO =
@@ -63,8 +64,13 @@ export default function LoginScreen() {
           style={styles.scrim}
         />
         <SafeAreaView edges={["top"]} style={styles.heroContent}>
-          <Text style={styles.brand}>RosterSync</Text>
-          <Text style={styles.tagline}>Enter your 4-digit PIN</Text>
+          <View style={styles.brandRow}>
+            <Logo size={56} />
+            <View>
+              <Text style={styles.brand}>Profile</Text>
+              <Text style={styles.tagline}>Enter your 4-digit PIN</Text>
+            </View>
+          </View>
         </SafeAreaView>
       </View>
 
@@ -118,6 +124,7 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
         </Link>
+        <BrandFooter />
       </SafeAreaView>
     </View>
   );
@@ -132,6 +139,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     padding: spacing.xl,
     justifyContent: "flex-end",
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
   },
   brand: {
     color: "#fff",

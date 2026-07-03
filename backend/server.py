@@ -260,7 +260,7 @@ async def get_user_leaves_map(user_id: str, start: date, end: date) -> Dict[str,
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
-    return {"message": "RosterSync API"}
+    return {"message": "Profile API"}
 
 
 @api_router.post("/auth/register", response_model=AuthResponse)
