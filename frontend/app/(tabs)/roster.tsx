@@ -16,8 +16,8 @@ import { colors, spacing, radius } from "@/src/theme/colors";
 
 const LEAVE_COLOR = "#7C3AED";
 const PUBLIC_HOLIDAY_COLOR = "#DC2626";
-const SCHOOL_HOLIDAY_COLOR = "#2563EB";
-const TODAY_COLOR = "#F97316";
+const SCHOOL_HOLIDAY_COLOR = "#0EA5E9";
+const TODAY_COLOR = "#2563EB";
 
 function formatISO(d: Date) {
   const y = d.getFullYear();
@@ -154,68 +154,22 @@ export default function RosterScreen() {
       })}`
     : "";
 
-  // Calendar markings
+  // Calendar day lookup + today
   const todayISO = formatISO(new Date());
+  const daysByDate = useMemo(() => {
+    const map: Record<string, DayEntry> = {};
+    (calendarRoster?.days || []).forEach((d) => {
+      map[d.date] = d;
+    });
+    return map;
+  }, [calendarRoster]);
+
+  // Keep a lightweight markedDates so react-native-calendars still routes taps.
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
-    (calendarRoster?.days || []).forEach((d) => {
-      const dots: { color: string; key: string }[] = [];
-      let bgColor: string | undefined;
-      let textColor: string | undefined;
-      if (d.status === "regular") {
-        bgColor = colors.brand;
-        textColor = "#fff";
-      } else if (d.status === "short") {
-        bgColor = colors.warning;
-        textColor = "#fff";
-      } else if (d.status === "leave") {
-        bgColor = LEAVE_COLOR;
-        textColor = "#fff";
-      } else if (d.status === "day_off") {
-        bgColor = colors.surfaceTertiary;
-        textColor = colors.onSurface;
-      }
-      if (d.public_holiday) {
-        dots.push({ color: PUBLIC_HOLIDAY_COLOR, key: "ph" });
-      }
-      if (d.school_holiday) {
-        dots.push({ color: SCHOOL_HOLIDAY_COLOR, key: "sh" });
-      }
-      // Border precedence: today (orange) > public holiday (red) > none
-      let borderColor: string | undefined;
-      let borderWidth = 0;
-      if (d.date === todayISO) {
-        borderColor = TODAY_COLOR;
-        borderWidth = 2.5;
-      } else if (d.public_holiday) {
-        borderColor = PUBLIC_HOLIDAY_COLOR;
-        borderWidth = 2;
-      }
-      marks[d.date] = {
-        customStyles: {
-          container: {
-            backgroundColor: bgColor || "transparent",
-            borderRadius: 10,
-            borderColor: borderColor || "transparent",
-            borderWidth,
-          },
-          text: {
-            color: textColor || colors.onSurface,
-            fontWeight: d.date === todayISO ? "800" : "500",
-          },
-        },
-        dots,
-      };
-    });
-    if (selectedDate) {
-      marks[selectedDate] = {
-        ...(marks[selectedDate] || {}),
-        selected: true,
-        selectedColor: colors.brand,
-      };
-    }
+    if (selectedDate) marks[selectedDate] = { selected: true };
     return marks;
-  }, [calendarRoster, selectedDate, todayISO]);
+  }, [selectedDate]);
 
   const selectedEntry = calendarRoster?.days.find((d) => d.date === selectedDate) || null;
 
@@ -340,17 +294,101 @@ export default function RosterScreen() {
               <View style={styles.calendarWrap} testID="calendar-view">
                 <Calendar
                   current={formatISO(new Date())}
-                  markingType="custom"
                   markedDates={markedDates}
                   onDayPress={(day) => setSelectedDate(day.dateString)}
                   onMonthChange={(m) => {
                     loadCalendar(new Date(m.dateString + "T00:00:00"));
                   }}
+                  dayComponent={({ date, state }) => {
+                    if (!date) return null;
+                    const iso = date.dateString;
+                    const entry = daysByDate[iso];
+                    const isToday = iso === todayISO;
+                    const isSelected = iso === selectedDate;
+                    const isDisabled = state === "disabled";
+                    let bg: string = "transparent";
+                    let textColor: string = colors.onSurface;
+                    if (entry) {
+                      if (entry.status === "regular") {
+                        bg = colors.brand;
+                        textColor = "#fff";
+                      } else if (entry.status === "short") {
+                        bg = colors.warning;
+                        textColor = "#fff";
+                      } else if (entry.status === "leave") {
+                        bg = LEAVE_COLOR;
+                        textColor = "#fff";
+                      } else if (entry.status === "day_off") {
+                        bg = colors.surfaceTertiary;
+                        textColor = colors.onSurface;
+                      }
+                    }
+                    if (isDisabled) textColor = colors.muted;
+                    // Border precedence: today (blue) > public holiday (red) > selected (dark) > none
+                    let borderColor = "transparent";
+                    let borderWidth = 0;
+                    if (isToday) {
+                      borderColor = TODAY_COLOR;
+                      borderWidth = 2.5;
+                    } else if (entry?.public_holiday) {
+                      borderColor = PUBLIC_HOLIDAY_COLOR;
+                      borderWidth = 2;
+                    } else if (isSelected) {
+                      borderColor = colors.onSurface;
+                      borderWidth = 2;
+                    }
+                    return (
+                      <TouchableOpacity
+                        testID={`cal-day-${iso}`}
+                        activeOpacity={0.7}
+                        onPress={() => setSelectedDate(iso)}
+                        style={styles.calCell}
+                      >
+                        <View
+                          style={[
+                            styles.calCellInner,
+                            {
+                              backgroundColor: bg,
+                              borderColor,
+                              borderWidth,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.calCellText,
+                              {
+                                color: textColor,
+                                fontWeight: isToday ? "800" : "500",
+                              },
+                            ]}
+                          >
+                            {date.day}
+                          </Text>
+                          {(entry?.public_holiday || entry?.school_holiday) && (
+                            <View style={styles.calDots}>
+                              {entry.public_holiday && (
+                                <View
+                                  testID={`cal-ph-${iso}`}
+                                  style={[styles.calDot, { backgroundColor: PUBLIC_HOLIDAY_COLOR }]}
+                                />
+                              )}
+                              {entry.school_holiday && (
+                                <View
+                                  testID={`cal-sh-${iso}`}
+                                  style={[styles.calDot, { backgroundColor: SCHOOL_HOLIDAY_COLOR }]}
+                                />
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }}
                   theme={{
                     backgroundColor: colors.surfaceSecondary,
                     calendarBackground: colors.surfaceSecondary,
                     textSectionTitleColor: colors.onSurfaceTertiary,
-                    todayTextColor: TODAY_COLOR,
                     dayTextColor: colors.onSurface,
                     textDisabledColor: colors.muted,
                     monthTextColor: colors.onSurface,
@@ -743,6 +781,35 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginBottom: spacing.lg,
     overflow: "hidden",
+  },
+  calCell: {
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 2,
+  },
+  calCellInner: {
+    width: 38,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 2,
+  },
+  calCellText: {
+    fontSize: 14,
+  },
+  calDots: {
+    flexDirection: "row",
+    gap: 2,
+    marginTop: 2,
+    position: "absolute",
+    bottom: 3,
+  },
+  calDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   hint: {
     color: colors.onSurfaceTertiary,
