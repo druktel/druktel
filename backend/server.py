@@ -167,6 +167,29 @@ class AccessVerifyRequest(BaseModel):
     code: str
 
 
+class FriendPublic(BaseModel):
+    id: str
+    name: str
+    working_days: List[int]
+    since: str
+
+
+class DiscoverEntry(BaseModel):
+    id: str
+    name: str
+    working_days: List[int]
+    is_friend: bool
+
+
+class FeedItem(BaseModel):
+    date: str
+    type: str  # "day_off" | "leave" | "short"
+    label: str
+    friend_id: str
+    friend_name: str
+    note: Optional[str] = None
+
+
 class RosterResponse(BaseModel):
     start_date: str
     end_date: str
@@ -490,6 +513,138 @@ async def delete_leave(leave_id: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+# ---------- Friends & feed ----------
+@api_router.get("/discover")
+async def discover_users(limit: int = 50, user: dict = Depends(get_current_user)):
+    """Return other users the current user can befriend."""
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=400, detail="limit must be 1..200")
+    friend_edges = await db.friends.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    friend_ids = {e["friend_id"] for e in friend_edges}
+    others = await db.users.find(
+        {"id": {"$ne": user["id"]}},
+        {"_id": 0, "pin_hash": 0},
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    entries = [
+        DiscoverEntry(
+            id=u["id"],
+            name=u["name"],
+            working_days=u.get("working_days", []),
+            is_friend=(u["id"] in friend_ids),
+        )
+        for u in others
+    ]
+    return {"users": entries}
+
+
+@api_router.get("/friends")
+async def list_friends(user: dict = Depends(get_current_user)):
+    edges = await db.friends.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    friend_ids = [e["friend_id"] for e in edges]
+    since_by_id = {e["friend_id"]: e["created_at"] for e in edges}
+    if not friend_ids:
+        return {"friends": []}
+    friend_docs = await db.users.find(
+        {"id": {"$in": friend_ids}}, {"_id": 0, "pin_hash": 0}
+    ).to_list(500)
+    friends = [
+        FriendPublic(
+            id=f["id"],
+            name=f["name"],
+            working_days=f.get("working_days", []),
+            since=since_by_id.get(f["id"], ""),
+        )
+        for f in friend_docs
+    ]
+    return {"friends": friends}
+
+
+@api_router.post("/friends/{friend_id}")
+async def add_friend(friend_id: str, user: dict = Depends(get_current_user)):
+    if friend_id == user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot add yourself")
+    target = await db.users.find_one({"id": friend_id}, {"_id": 0, "pin_hash": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    existing = await db.friends.find_one({"user_id": user["id"], "friend_id": friend_id})
+    if existing:
+        raise HTTPException(status_code=409, detail="Already in your friends list")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Bidirectional friendship: create edges in both directions.
+    await db.friends.insert_many([
+        {"id": str(uuid.uuid4()), "user_id": user["id"], "friend_id": friend_id, "created_at": now_iso},
+        {"id": str(uuid.uuid4()), "user_id": friend_id, "friend_id": user["id"], "created_at": now_iso},
+    ])
+    return {"ok": True, "friend": {"id": target["id"], "name": target["name"]}}
+
+
+@api_router.delete("/friends/{friend_id}")
+async def remove_friend(friend_id: str, user: dict = Depends(get_current_user)):
+    res = await db.friends.delete_many({
+        "$or": [
+            {"user_id": user["id"], "friend_id": friend_id},
+            {"user_id": friend_id, "friend_id": user["id"]},
+        ]
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Friendship not found")
+    return {"ok": True}
+
+
+@api_router.get("/feed")
+async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
+    if days < 1 or days > 60:
+        raise HTTPException(status_code=400, detail="days must be 1..60")
+    edges = await db.friends.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    friend_ids = [e["friend_id"] for e in edges]
+    if not friend_ids:
+        return {"items": []}
+
+    friend_docs = await db.users.find(
+        {"id": {"$in": friend_ids}}, {"_id": 0, "pin_hash": 0}
+    ).to_list(500)
+
+    today = datetime.now(timezone.utc).date()
+    end = today + timedelta(days=days - 1)
+    items: List[dict] = []
+    for f in friend_docs:
+        leaves_map = await get_user_leaves_map(f["id"], today, end)
+        for i in range(days):
+            d = today + timedelta(days=i)
+            iso = d.isoformat()
+            if iso in leaves_map:
+                items.append({
+                    "date": iso,
+                    "type": "leave",
+                    "label": "Personal leave",
+                    "friend_id": f["id"],
+                    "friend_name": f["name"],
+                    "note": leaves_map[iso] or None,
+                })
+                continue
+            status, hours, label = compute_day_status(f, d)
+            if status == "day_off":
+                items.append({
+                    "date": iso,
+                    "type": "day_off",
+                    "label": "Day off",
+                    "friend_id": f["id"],
+                    "friend_name": f["name"],
+                    "note": None,
+                })
+            elif status == "short":
+                items.append({
+                    "date": iso,
+                    "type": "short",
+                    "label": "Short day (8h)",
+                    "friend_id": f["id"],
+                    "friend_name": f["name"],
+                    "note": None,
+                })
+    items.sort(key=lambda x: (x["date"], x["friend_name"]))
+    return {"items": items[:200]}
+
+
 # ---------- Admin ----------
 @api_router.get("/admin/users")
 async def admin_list_users(limit: int = 100, skip: int = 0, _: dict = Depends(require_admin)):
@@ -593,6 +748,7 @@ async def startup_indexes():
     await db.leaves.create_index("id", unique=True)
     await db.access_codes.create_index("code", unique=True)
     await db.access_codes.create_index("id", unique=True)
+    await db.friends.create_index([("user_id", 1), ("friend_id", 1)], unique=True)
 
     # Seed the standard employee access code so new employees can pass the
     # gate. Admins can create additional codes via the Admin tab.

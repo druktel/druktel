@@ -41,6 +41,29 @@ export type AccessCode = {
   created_at: string;
 };
 
+export type DiscoverEntry = {
+  id: string;
+  name: string;
+  working_days: number[];
+  is_friend: boolean;
+};
+
+export type FriendEntry = {
+  id: string;
+  name: string;
+  working_days: number[];
+  since: string;
+};
+
+export type FeedItem = {
+  date: string;
+  type: "day_off" | "leave" | "short";
+  label: string;
+  friend_id: string;
+  friend_name: string;
+  note?: string | null;
+};
+
 export type RosterResponse = {
   start_date: string;
   end_date: string;
@@ -167,4 +190,15 @@ export const api = {
     }),
   adminDeleteAccessCode: (id: string) =>
     request<{ ok: boolean }>(`/admin/access-codes/${id}`, { method: "DELETE" }),
+  discover: (limit = 50) =>
+    request<{ users: DiscoverEntry[] }>(`/discover?limit=${limit}`),
+  listFriends: () => request<{ friends: FriendEntry[] }>("/friends"),
+  addFriend: (friendId: string) =>
+    request<{ ok: boolean; friend: { id: string; name: string } }>(
+      `/friends/${friendId}`,
+      { method: "POST" },
+    ),
+  removeFriend: (friendId: string) =>
+    request<{ ok: boolean }>(`/friends/${friendId}`, { method: "DELETE" }),
+  feed: (days = 14) => request<{ items: FeedItem[] }>(`/feed?days=${days}`),
 };
