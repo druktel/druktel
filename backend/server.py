@@ -136,6 +136,14 @@ class UpdateRosterRequest(BaseModel):
         return v
 
 
+# Required number of working days per FT schedule (user requirement).
+FT_REQUIRED_DAYS: Dict[str, int] = {
+    "fortnight_9": 5,
+    "daily_8": 5,
+    "daily_9_5": 4,
+}
+
+
 def validate_schedule_payload(
     employment_type: str,
     ft_schedule: Optional[str],
@@ -171,6 +179,15 @@ def validate_schedule_payload(
     # Full-time
     if ft_schedule not in FT_SCHEDULES:
         raise HTTPException(status_code=400, detail="ft_schedule must be one of fortnight_9, daily_9_5, daily_8")
+
+    required = FT_REQUIRED_DAYS.get(ft_schedule)
+    unique_days = sorted(set(working_days))
+    if required is not None and len(unique_days) != required:
+        label = "9-day fortnight" if ft_schedule == "fortnight_9" else ("9.5h per day" if ft_schedule == "daily_9_5" else "8h per day")
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} requires exactly {required} working days a week",
+        )
 
     if ft_schedule == "fortnight_9":
         if not initial_day_off_date:
@@ -404,7 +421,9 @@ def compute_day_status(user: dict, d: date):
             raw = float(pt_map.get(str(d_dow), 0.0) or 0.0)
         except Exception:
             raw = 0.0
-        paid = max(0.0, raw - (0.5 if lunch else 0.0))
+        # For PT: entered hours are already the PAID hours. The lunch
+        # checkbox is informational only (do not deduct) — user's rule.
+        paid = max(0.0, raw)
         return ("regular", round(paid, 2), f"{paid:.1f}h paid")
 
     # ----- Full-time flat-daily schedules -----

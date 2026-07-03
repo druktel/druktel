@@ -21,6 +21,18 @@ const WEEKDAYS = [
   { i: 6, name: "Sun" },
 ];
 
+const FT_REQUIRED_DAYS: Record<FTSchedule, number> = {
+  fortnight_9: 5,
+  daily_8: 5,
+  daily_9_5: 4,
+};
+
+const FT_DEFAULT_DAYS: Record<FTSchedule, number[]> = {
+  fortnight_9: [0, 1, 2, 3, 4],
+  daily_8: [0, 1, 2, 3, 4],
+  daily_9_5: [0, 1, 2, 3],
+};
+
 export type ScheduleFormState = {
   employmentType: EmploymentType;
   ftSchedule: FTSchedule;
@@ -52,23 +64,49 @@ type Props = {
 };
 
 export function ScheduleForm({ value, onChange }: Props) {
+  const requiredDayCount =
+    value.employmentType === "FT" ? FT_REQUIRED_DAYS[value.ftSchedule] : null;
+
   const toggleDay = (i: number) => {
     const has = value.workingDays.includes(i);
-    const next = has
-      ? value.workingDays.filter((x) => x !== i)
-      : [...value.workingDays, i].sort();
-    // When removing a PT day, drop its hours
-    const nextHours = { ...value.ptDayHours };
-    if (has) delete nextHours[String(i)];
-    onChange({ ...value, workingDays: next, ptDayHours: nextHours });
+    if (has) {
+      // Always allow removing
+      const next = value.workingDays.filter((x) => x !== i);
+      const nextHours = { ...value.ptDayHours };
+      delete nextHours[String(i)];
+      onChange({ ...value, workingDays: next, ptDayHours: nextHours });
+      return;
+    }
+    // Adding — respect FT cap
+    if (requiredDayCount !== null && value.workingDays.length >= requiredDayCount) {
+      return; // cap reached; ignore tap
+    }
+    const next = [...value.workingDays, i].sort();
+    onChange({ ...value, workingDays: next });
   };
 
   const setEmploymentType = (et: EmploymentType) => {
-    onChange({ ...value, employmentType: et });
+    if (et === value.employmentType) return;
+    if (et === "FT") {
+      // Reset working days to fit current FT schedule requirement
+      onChange({
+        ...value,
+        employmentType: "FT",
+        workingDays: FT_DEFAULT_DAYS[value.ftSchedule].slice(),
+      });
+    } else {
+      onChange({ ...value, employmentType: "PT" });
+    }
   };
 
   const setFTSchedule = (s: FTSchedule) => {
-    onChange({ ...value, ftSchedule: s });
+    if (s === value.ftSchedule) return;
+    // Auto-adjust working days to the required count for the new schedule.
+    onChange({
+      ...value,
+      ftSchedule: s,
+      workingDays: FT_DEFAULT_DAYS[s].slice(),
+    });
   };
 
   const setPTHours = (dow: number, text: string) => {
@@ -82,13 +120,27 @@ export function ScheduleForm({ value, onChange }: Props) {
   const setDayOff = (d: string) => onChange({ ...value, dayOffDate: d });
   const setLunch = (b: boolean) => onChange({ ...value, hasLunchBreak: b });
 
+  const anyPTDayOver6 = useMemo(() => {
+    if (value.employmentType !== "PT") return false;
+    return value.workingDays.some((dow) => {
+      const raw = value.ptDayHours[String(dow)];
+      const n = parseFloat(raw || "0");
+      return isFinite(n) && n > 6;
+    });
+  }, [value.employmentType, value.workingDays, value.ptDayHours]);
+
   const showLunchToggle = useMemo(() => {
     // Fortnight_9 already bakes in lunch — hide the toggle to avoid confusion.
     if (value.employmentType === "FT" && value.ftSchedule === "fortnight_9") {
       return false;
     }
+    // Part-time: show only if at least one selected day has >6 hours.
+    if (value.employmentType === "PT") {
+      return anyPTDayOver6;
+    }
+    // FT daily_9_5 / daily_8: always show.
     return true;
-  }, [value.employmentType, value.ftSchedule]);
+  }, [value.employmentType, value.ftSchedule, anyPTDayOver6]);
 
   const showDayOff =
     value.employmentType === "FT" && value.ftSchedule === "fortnight_9";
@@ -96,23 +148,27 @@ export function ScheduleForm({ value, onChange }: Props) {
 
   const scheduleHint = useMemo(() => {
     if (value.employmentType === "PT") {
-      return "Pick each day you work and how many hours you're at work that day.";
+      const parts = ["Pick each day you work and how many hours you're at work that day."];
+      if (anyPTDayOver6) {
+        parts.push("Days over 6h can include a 30-min unpaid lunch break — tick the box below if you take one.");
+      }
+      return parts.join(" ");
     }
     if (value.ftSchedule === "fortnight_9") {
-      return "Every second week you get 1 day off and 1 short 8h day (30 min lunch already excluded).";
+      return "Every second week you get 1 day off and 1 short 8h day (30 min lunch already excluded). Requires exactly 5 working days.";
     }
     if (value.ftSchedule === "daily_9_5") {
       return value.hasLunchBreak
-        ? "9.5h paid per working day (30 min unpaid lunch)."
-        : "10h paid per working day (no lunch break).";
+        ? "9.5h paid per working day (30 min unpaid lunch). Requires exactly 4 working days."
+        : "10h paid per working day (no lunch break). Requires exactly 4 working days.";
     }
     if (value.ftSchedule === "daily_8") {
       return value.hasLunchBreak
-        ? "8h paid per working day (30 min unpaid lunch)."
-        : "8.5h paid per working day (no lunch break).";
+        ? "8h paid per working day (30 min unpaid lunch). Requires exactly 5 working days."
+        : "8.5h paid per working day (no lunch break). Requires exactly 5 working days.";
     }
     return "";
-  }, [value.employmentType, value.ftSchedule, value.hasLunchBreak]);
+  }, [value.employmentType, value.ftSchedule, value.hasLunchBreak, anyPTDayOver6]);
 
   return (
     <View>
@@ -148,21 +204,21 @@ export function ScheduleForm({ value, onChange }: Props) {
               testID="sched-fortnight_9"
               active={value.ftSchedule === "fortnight_9"}
               title="9-day fortnight"
-              subtitle="Rotating day off + 8h short day"
+              subtitle="5 days a week · rotating day off + 8h short day"
               onPress={() => setFTSchedule("fortnight_9")}
             />
             <SchedulePill
               testID="sched-daily_9_5"
               active={value.ftSchedule === "daily_9_5"}
               title="9.5h per day"
-              subtitle="Choose the days you work"
+              subtitle="Choose 4 days a week"
               onPress={() => setFTSchedule("daily_9_5")}
             />
             <SchedulePill
               testID="sched-daily_8"
               active={value.ftSchedule === "daily_8"}
               title="8h per day"
-              subtitle="Choose the days you work"
+              subtitle="Choose 5 days a week"
               onPress={() => setFTSchedule("daily_8")}
             />
           </View>
@@ -170,21 +226,38 @@ export function ScheduleForm({ value, onChange }: Props) {
       )}
 
       {/* Working days */}
-      <Text style={styles.label}>Working days</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.labelInline}>Working days</Text>
+        {requiredDayCount !== null && (
+          <Text style={styles.dayCountHint}>
+            {value.workingDays.length} / {requiredDayCount} selected
+          </Text>
+        )}
+      </View>
       <View style={styles.daysRow}>
         {WEEKDAYS.map((w) => {
           const selected = value.workingDays.includes(w.i);
+          const atCap =
+            requiredDayCount !== null &&
+            !selected &&
+            value.workingDays.length >= requiredDayCount;
           return (
             <TouchableOpacity
               key={w.i}
               testID={`working-day-${w.i}`}
               onPress={() => toggleDay(w.i)}
-              style={[styles.dayChip, selected && styles.dayChipActive]}
+              disabled={atCap}
+              style={[
+                styles.dayChip,
+                selected && styles.dayChipActive,
+                atCap && styles.dayChipDisabled,
+              ]}
             >
               <Text
                 style={[
                   styles.dayChipText,
                   selected && styles.dayChipTextActive,
+                  atCap && styles.dayChipTextDisabled,
                 ]}
               >
                 {w.name}
@@ -267,7 +340,9 @@ export function ScheduleForm({ value, onChange }: Props) {
           <View style={{ flex: 1 }}>
             <Text style={styles.lunchTitle}>Take 30-min unpaid lunch break</Text>
             <Text style={styles.lunchHint}>
-              Deducts 30 minutes from each working day&apos;s paid hours.
+              {value.employmentType === "PT"
+                ? "For your records — your entered hours are treated as paid hours."
+                : "Deducts 30 minutes from each working day's paid hours."}
             </Text>
           </View>
         </TouchableOpacity>
@@ -348,7 +423,19 @@ export function scheduleStateToPayload(v: ScheduleFormState) {
       has_lunch_break: v.hasLunchBreak,
     };
   }
-  // FT
+
+  // FT: enforce required day counts
+  const required = FT_REQUIRED_DAYS[v.ftSchedule];
+  if (v.workingDays.length !== required) {
+    const label =
+      v.ftSchedule === "fortnight_9"
+        ? "9-day fortnight"
+        : v.ftSchedule === "daily_9_5"
+          ? "9.5h per day"
+          : "8h per day";
+    throw new Error(`${label} requires exactly ${required} working days a week`);
+  }
+
   if (v.ftSchedule === "fortnight_9") {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v.dayOffDate)) {
       throw new Error("Day-off date must be YYYY-MM-DD");
@@ -413,6 +500,23 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceTertiary,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
+  },
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  labelInline: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.onSurfaceTertiary,
+  },
+  dayCountHint: {
+    fontSize: 12,
+    color: colors.onSurfaceTertiary,
+    fontWeight: "600",
   },
   segment: {
     flexDirection: "row",
@@ -482,8 +586,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   dayChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  dayChipDisabled: {
+    opacity: 0.35,
+  },
   dayChipText: { color: colors.onSurface, fontWeight: "600" },
   dayChipTextActive: { color: "#fff" },
+  dayChipTextDisabled: { color: colors.muted },
   help: {
     color: colors.onSurfaceTertiary,
     fontSize: 12,
