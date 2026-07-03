@@ -182,7 +182,7 @@ export default function RegisterScreen() {
           />
           <Text style={styles.help}>
             This is a day-off in your fortnight cycle. The day before it becomes
-            your 8.5h short day; the roster rotates every fortnight.
+            your 8h short day; the roster rotates every fortnight.
           </Text>
 
           <View style={styles.adminRow}>

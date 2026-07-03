@@ -221,7 +221,7 @@ export default function SettingsScreen() {
               label="Pick your day-off"
             />
             <Text style={styles.help}>
-              This date must be one of your working days. The 8.5h short day and
+              This date must be one of your working days. The 8h short day and
               full roster rotate from here.
             </Text>
           </View>

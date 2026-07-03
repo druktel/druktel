@@ -180,7 +180,7 @@ def compute_day_status(user: dict, d: date):
 
     if anchor_dow not in working_days:
         # Anchor day-off must be a working day. Fallback: treat as regular.
-        return ("regular", 9.0, "9h shift")
+        return ("regular", 8.5, "8.5h paid")
 
     # fortnight0_start = Monday of week1 of the anchor's fortnight.
     # Anchor is in week 2 of that fortnight.
@@ -208,10 +208,10 @@ def compute_day_status(user: dict, d: date):
         if d_dow == day_off_dow:
             return ("day_off", 0.0, "Day off")
         if d_dow == short_dow:
-            return ("short", 8.5, "Short 8.5h")
-        return ("regular", 9.0, "9h shift")
+            return ("short", 8.0, "Short 8h paid")
+        return ("regular", 8.5, "8.5h paid")
     else:
-        return ("regular", 9.0, "9h shift")
+        return ("regular", 8.5, "8.5h paid")
 
 
 def build_roster(user: dict, start: date, num_days: int, leaves: Optional[Dict[str, str]] = None) -> RosterResponse:

@@ -36,9 +36,9 @@ function mondayOf(d: Date) {
 function statusColor(status: DayEntry["status"]) {
   switch (status) {
     case "regular":
-      return { bg: colors.brand, text: "#fff", label: "9h" };
+      return { bg: colors.brand, text: "#fff", label: "8.5h" };
     case "short":
-      return { bg: colors.warning, text: "#fff", label: "8.5h" };
+      return { bg: colors.warning, text: "#fff", label: "8h" };
     case "day_off":
       return { bg: colors.surfaceTertiary, text: colors.onSurfaceTertiary, label: "OFF" };
     case "leave":
@@ -275,7 +275,8 @@ export default function RosterScreen() {
 
             <Legend />
             <Text style={styles.footNote}>
-              All shifts include a 30 min lunch break. Short day always falls
+              All shifts show paid hours (30 min unpaid lunch break already
+              excluded). Short day always falls
               before your day off; when the day off is your earliest working
               day of the week, the short day is your latest working day of the
               same week.
@@ -533,7 +534,7 @@ function DayDetailCard({
       </View>
       {isWorking && (
         <Text style={styles.detailHelp}>
-          {entry.hours.toFixed(1)} hours including 30 min lunch break
+          {entry.hours.toFixed(1)} paid hours (30 min unpaid lunch excluded)
         </Text>
       )}
       {isLeave && entry.leave_note && (
@@ -586,8 +587,8 @@ function DayDetailCard({
 function Legend({ showHolidays }: { showHolidays?: boolean } = {}) {
   return (
     <View style={styles.legend}>
-      <LegendItem color={colors.brand} label="9h shift" />
-      <LegendItem color={colors.warning} label="8.5h short" />
+      <LegendItem color={colors.brand} label="8.5h shift" />
+      <LegendItem color={colors.warning} label="8h short" />
       <LegendItem color={colors.surfaceTertiary} label="Day off" isLight />
       <LegendItem color={LEAVE_COLOR} label="Personal leave" />
       <View style={styles.legendItem}>

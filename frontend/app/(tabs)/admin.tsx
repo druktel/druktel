@@ -20,9 +20,9 @@ const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function statusMeta(status: DayEntry["status"]) {
   switch (status) {
     case "regular":
-      return { bg: colors.brand, text: "#fff", label: "9h" };
+      return { bg: colors.brand, text: "#fff", label: "8.5h" };
     case "short":
-      return { bg: colors.warning, text: "#fff", label: "8.5h" };
+      return { bg: colors.warning, text: "#fff", label: "8h" };
     case "day_off":
       return { bg: colors.surfaceTertiary, text: colors.onSurfaceTertiary, label: "OFF" };
     case "non_working":

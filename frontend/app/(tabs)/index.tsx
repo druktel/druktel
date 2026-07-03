@@ -170,7 +170,7 @@ export default function TodayScreen() {
                     {today.hours.toFixed(1)}h
                   </Text>
                   <Text style={styles.heroSub}>
-                    Includes 30 min lunch break
+                    30 min unpaid lunch already excluded
                   </Text>
                 </>
               ) : today.status === "leave" ? (
