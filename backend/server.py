@@ -190,6 +190,37 @@ class FeedItem(BaseModel):
     note: Optional[str] = None
 
 
+class Post(BaseModel):
+    id: str
+    user_id: str
+    author_name: str
+    text: str
+    visibility: str  # "public" | "friends"
+    created_at: str
+
+
+class PostCreate(BaseModel):
+    text: str
+    visibility: str = "public"
+
+    @field_validator('text')
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Post cannot be empty")
+        if len(v) > 500:
+            raise ValueError("Post is too long (max 500 chars)")
+        return v
+
+    @field_validator('visibility')
+    @classmethod
+    def validate_visibility(cls, v: str) -> str:
+        if v not in ("public", "friends"):
+            raise ValueError("visibility must be 'public' or 'friends'")
+        return v
+
+
 class RosterResponse(BaseModel):
     start_date: str
     end_date: str
@@ -645,6 +676,55 @@ async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
     return {"items": items[:200]}
 
 
+# ---------- Posts (short text updates) ----------
+@api_router.post("/posts", response_model=Post)
+async def create_post(payload: PostCreate, user: dict = Depends(get_current_user)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "author_name": user["name"],
+        "text": payload.text,
+        "visibility": payload.visibility,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.posts.insert_one(doc)
+    doc.pop("_id", None)
+    return Post(**doc)
+
+
+@api_router.get("/posts")
+async def list_posts(limit: int = 40, user: dict = Depends(get_current_user)):
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be 1..100")
+    edges = await db.friends.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    friend_ids = [e["friend_id"] for e in edges]
+    # A post is visible if:
+    #   - visibility = "public", OR
+    #   - visibility = "friends" AND (user_id == self OR user_id in my friends)
+    friend_scope = friend_ids + [user["id"]]
+    query = {
+        "$or": [
+            {"visibility": "public"},
+            {"visibility": "friends", "user_id": {"$in": friend_scope}},
+        ]
+    }
+    docs = await (
+        db.posts.find(query, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
+    return {"posts": docs}
+
+
+@api_router.delete("/posts/{post_id}")
+async def delete_post(post_id: str, user: dict = Depends(get_current_user)):
+    res = await db.posts.delete_one({"id": post_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return {"ok": True}
+
+
 # ---------- Admin ----------
 @api_router.get("/admin/users")
 async def admin_list_users(limit: int = 100, skip: int = 0, _: dict = Depends(require_admin)):
@@ -749,6 +829,8 @@ async def startup_indexes():
     await db.access_codes.create_index("code", unique=True)
     await db.access_codes.create_index("id", unique=True)
     await db.friends.create_index([("user_id", 1), ("friend_id", 1)], unique=True)
+    await db.posts.create_index("created_at")
+    await db.posts.create_index("user_id")
 
     # Seed the standard employee access code so new employees can pass the
     # gate. Admins can create additional codes via the Admin tab.

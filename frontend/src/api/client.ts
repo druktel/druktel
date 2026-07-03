@@ -64,6 +64,15 @@ export type FeedItem = {
   note?: string | null;
 };
 
+export type Post = {
+  id: string;
+  user_id: string;
+  author_name: string;
+  text: string;
+  visibility: "public" | "friends";
+  created_at: string;
+};
+
 export type RosterResponse = {
   start_date: string;
   end_date: string;
@@ -201,4 +210,12 @@ export const api = {
   removeFriend: (friendId: string) =>
     request<{ ok: boolean }>(`/friends/${friendId}`, { method: "DELETE" }),
   feed: (days = 14) => request<{ items: FeedItem[] }>(`/feed?days=${days}`),
+  listPosts: (limit = 40) => request<{ posts: Post[] }>(`/posts?limit=${limit}`),
+  createPost: (text: string, visibility: "public" | "friends") =>
+    request<Post>("/posts", {
+      method: "POST",
+      body: JSON.stringify({ text, visibility }),
+    }),
+  deletePost: (id: string) =>
+    request<{ ok: boolean }>(`/posts/${id}`, { method: "DELETE" }),
 };
