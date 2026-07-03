@@ -17,6 +17,7 @@ import { colors, spacing, radius } from "@/src/theme/colors";
 const LEAVE_COLOR = "#7C3AED";
 const PUBLIC_HOLIDAY_COLOR = "#DC2626";
 const SCHOOL_HOLIDAY_COLOR = "#2563EB";
+const TODAY_COLOR = "#F97316";
 
 function formatISO(d: Date) {
   const y = d.getFullYear();
@@ -154,6 +155,7 @@ export default function RosterScreen() {
     : "";
 
   // Calendar markings
+  const todayISO = formatISO(new Date());
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
     (calendarRoster?.days || []).forEach((d) => {
@@ -179,15 +181,27 @@ export default function RosterScreen() {
       if (d.school_holiday) {
         dots.push({ color: SCHOOL_HOLIDAY_COLOR, key: "sh" });
       }
+      // Border precedence: today (orange) > public holiday (red) > none
+      let borderColor: string | undefined;
+      let borderWidth = 0;
+      if (d.date === todayISO) {
+        borderColor = TODAY_COLOR;
+        borderWidth = 2.5;
+      } else if (d.public_holiday) {
+        borderColor = PUBLIC_HOLIDAY_COLOR;
+        borderWidth = 2;
+      }
       marks[d.date] = {
         customStyles: {
           container: {
             backgroundColor: bgColor || "transparent",
             borderRadius: 10,
+            borderColor: borderColor || "transparent",
+            borderWidth,
           },
           text: {
             color: textColor || colors.onSurface,
-            fontWeight: d.is_today ? "700" : "500",
+            fontWeight: d.date === todayISO ? "800" : "500",
           },
         },
         dots,
@@ -201,7 +215,7 @@ export default function RosterScreen() {
       };
     }
     return marks;
-  }, [calendarRoster, selectedDate]);
+  }, [calendarRoster, selectedDate, todayISO]);
 
   const selectedEntry = calendarRoster?.days.find((d) => d.date === selectedDate) || null;
 
@@ -336,7 +350,7 @@ export default function RosterScreen() {
                     backgroundColor: colors.surfaceSecondary,
                     calendarBackground: colors.surfaceSecondary,
                     textSectionTitleColor: colors.onSurfaceTertiary,
-                    todayTextColor: colors.brand,
+                    todayTextColor: TODAY_COLOR,
                     dayTextColor: colors.onSurface,
                     textDisabledColor: colors.muted,
                     monthTextColor: colors.onSurface,
@@ -396,13 +410,10 @@ function WeekBlock({
               testID={`${testIDPrefix}-day-${d.date}`}
               style={[
                 styles.dayCell,
-                {
-                  backgroundColor: c.bg,
-                  borderColor: d.is_today ? colors.onSurface : "transparent",
-                  borderWidth: d.is_today ? 2 : 0,
-                },
+                { backgroundColor: c.bg },
                 !isColored && styles.dayCellSoft,
                 d.public_holiday ? styles.dayCellPublicHoliday : null,
+                d.is_today ? styles.dayCellToday : null,
               ]}
             >
               {d.public_holiday && (
@@ -541,6 +552,10 @@ function Legend({ showHolidays }: { showHolidays?: boolean } = {}) {
       <LegendItem color={colors.warning} label="8.5h short" />
       <LegendItem color={colors.surfaceTertiary} label="Day off" isLight />
       <LegendItem color={LEAVE_COLOR} label="Personal leave" />
+      <View style={styles.legendItem}>
+        <View style={styles.legendTodaySwatch} />
+        <Text style={styles.legendText}>Today</Text>
+      </View>
       {showHolidays && (
         <>
           <LegendItem color={PUBLIC_HOLIDAY_COLOR} label="WA public holiday" isDot />
@@ -655,6 +670,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: PUBLIC_HOLIDAY_COLOR,
   },
+  dayCellToday: {
+    borderWidth: 2,
+    borderColor: TODAY_COLOR,
+  },
   phBadge: {
     position: "absolute",
     top: 2,
@@ -700,6 +719,14 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   legendSwatch: { width: 16, height: 16, borderRadius: 4 },
+  legendTodaySwatch: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: TODAY_COLOR,
+    backgroundColor: "transparent",
+  },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: colors.onSurfaceTertiary, fontSize: 12 },
   footNote: {
