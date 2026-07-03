@@ -21,7 +21,7 @@ from wa_holidays import (
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-PIN_PEPPER = "rostersync-v1-pepper"
+PIN_PEPPER = os.environ.get("PIN_PEPPER", "rostersync-v1-pepper")
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
