@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { api, UserPublic, Leave } from "@/src/api/client";
-import { BrandFooter } from "@/src/components/Brand";
+import { LogoMarkCompact, BrandFooter } from "@/src/components/Brand";
 import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -159,6 +159,9 @@ export default function SettingsScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.brandBar}>
+            <LogoMarkCompact />
+          </View>
           <Text style={styles.title}>Settings</Text>
           <Text style={styles.subtitle}>Edit your roster preferences.</Text>
 
@@ -357,6 +360,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   scroll: { padding: spacing.xl, paddingBottom: spacing.xxxl },
+  brandBar: { marginBottom: spacing.md },
   title: { fontSize: 26, fontWeight: "700", color: colors.onSurface },
   subtitle: { color: colors.onSurfaceTertiary, marginTop: 4, marginBottom: spacing.xl },
   card: {

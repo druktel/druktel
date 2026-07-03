@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
 import { api, RosterResponse, DayEntry } from "@/src/api/client";
+import { LogoMarkCompact } from "@/src/components/Brand";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const LEAVE_COLOR = "#7C3AED";
@@ -176,6 +177,9 @@ export default function RosterScreen() {
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <View style={styles.header}>
+        <View style={styles.brandBar}>
+          <LogoMarkCompact />
+        </View>
         <Text style={styles.title}>My Roster</Text>
         <View style={styles.viewToggle}>
           <TouchableOpacity
@@ -632,6 +636,7 @@ function LegendItem({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.md },
+  brandBar: { marginBottom: spacing.md },
   title: { fontSize: 26, fontWeight: "700", color: colors.onSurface },
   viewToggle: {
     flexDirection: "row",

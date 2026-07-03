@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { api, RosterResponse, UserPublic } from "@/src/api/client";
+import { LogoMarkCompact } from "@/src/components/Brand";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 type TodayInfo = {
@@ -127,6 +128,9 @@ export default function TodayScreen() {
           />
         }
       >
+        <View style={styles.brandBar}>
+          <LogoMarkCompact />
+        </View>
         <View style={styles.header}>
           <View>
             <Text style={styles.hello}>Hi, {user?.name.split(" ")[0]}</Text>
@@ -228,6 +232,9 @@ export default function TodayScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.xl, paddingBottom: spacing.xxxl },
+  brandBar: {
+    marginBottom: spacing.lg,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   header: {
     flexDirection: "row",

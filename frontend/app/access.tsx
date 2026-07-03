@@ -11,7 +11,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
-import { Logo, BrandFooter } from "@/src/components/Brand";
+import { LogoMarkFull, BrandFooter } from "@/src/components/Brand";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const ACCESS_GRANTED_KEY = "access_granted";
@@ -54,8 +54,7 @@ export default function AccessGateScreen() {
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]} testID="access-gate">
       <View style={styles.header}>
-        <Logo size={72} />
-        <Text style={styles.brand}>Profile</Text>
+        <LogoMarkFull badgeSize={72} />
         <Text style={styles.subtitle}>Enter the 4-digit access code</Text>
         <Text style={styles.hint}>
           Your administrator will share this with you to unlock the app.

@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
-import { Logo, BrandFooter } from "@/src/components/Brand";
+import { LogoMarkCompact, BrandFooter } from "@/src/components/Brand";
 import { DatePickerField } from "@/src/components/DatePickerField";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -120,8 +120,7 @@ export default function RegisterScreen() {
           </TouchableOpacity>
 
           <View style={styles.brandRow}>
-            <Logo size={44} />
-            <Text style={styles.brandName}>Profile</Text>
+            <LogoMarkCompact />
           </View>
 
           <Text style={styles.h1}>Set up your roster</Text>

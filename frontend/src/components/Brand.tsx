@@ -1,17 +1,11 @@
 import { View, Text, StyleSheet } from "react-native";
 import { colors, radius } from "@/src/theme/colors";
 
-type Props = {
-  size?: number;
-  variant?: "brand" | "light";
-};
-
 /**
- * Custom "Profile" logo — a rounded brand-green badge with a bold white "P"
- * and a small orange accent dot representing the "today" highlight from the
- * roster grid.
+ * Just the badge icon — a rounded brand-green square with a bold white "P"
+ * and a small orange accent dot.
  */
-export function Logo({ size = 64, variant = "brand" }: Props) {
+export function Logo({ size = 64, variant = "brand" }: { size?: number; variant?: "brand" | "light" }) {
   const badge = variant === "brand" ? colors.brand : "#FFFFFF";
   const letter = variant === "brand" ? "#FFFFFF" : colors.brand;
   const accent = "#F97316";
@@ -57,7 +51,43 @@ export function Logo({ size = 64, variant = "brand" }: Props) {
 }
 
 /**
- * Small footer used across auth screens.
+ * Full logo mark used on auth screens — badge stacked above the "Profile"
+ * wordmark and the "Your only digital by Druktel" tagline.
+ */
+export function LogoMarkFull({ badgeSize = 72 }: { badgeSize?: number } = {}) {
+  return (
+    <View style={styles.markFull}>
+      <Logo size={badgeSize} />
+      <Text style={styles.brandFull}>Profile</Text>
+      <Text style={styles.taglineFull}>
+        Your only digital{"  "}
+        <Text style={styles.taglineFullBold}>by Druktel</Text>
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * Compact horizontal logo mark used in every in-app screen header.
+ * Badge on the left, "Profile" wordmark + tagline stacked to the right.
+ */
+export function LogoMarkCompact() {
+  return (
+    <View style={styles.markCompact}>
+      <Logo size={34} />
+      <View style={styles.compactText}>
+        <Text style={styles.brandCompact}>Profile</Text>
+        <Text style={styles.taglineCompact}>
+          Your only digital{" "}
+          <Text style={styles.taglineCompactBold}>by Druktel</Text>
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Small footer used across screens. Text-only (no badge).
  */
 export function BrandFooter({ light }: { light?: boolean } = {}) {
   return (
@@ -92,6 +122,55 @@ const styles = StyleSheet.create({
   accent: {
     position: "absolute",
   },
+
+  markFull: {
+    alignItems: "center",
+    gap: 10,
+  },
+  brandFull: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: colors.onSurface,
+    letterSpacing: -0.5,
+  },
+  taglineFull: {
+    fontSize: 11,
+    color: colors.muted,
+    letterSpacing: 0.8,
+    fontWeight: "500",
+  },
+  taglineFullBold: {
+    color: colors.onSurface,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+
+  markCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  compactText: { flexShrink: 1 },
+  brandCompact: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: colors.onSurface,
+    letterSpacing: -0.3,
+    lineHeight: 20,
+  },
+  taglineCompact: {
+    fontSize: 9,
+    color: colors.muted,
+    letterSpacing: 0.5,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  taglineCompactBold: {
+    color: colors.brand,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+
   footer: {
     alignItems: "center",
     paddingVertical: 12,
@@ -102,18 +181,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     fontWeight: "500",
   },
-  footerTextLight: {
-    color: "rgba(255,255,255,0.72)",
-  },
+  footerTextLight: { color: "rgba(255,255,255,0.72)" },
   footerBold: {
     fontWeight: "800",
     color: "#425948",
     letterSpacing: 0.4,
   },
-  footerBoldLight: {
-    color: "#FFFFFF",
-  },
+  footerBoldLight: { color: "#FFFFFF" },
 });
 
-// re-export radius/border tokens to keep imports tidy elsewhere
 export { radius };
