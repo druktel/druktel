@@ -15,44 +15,23 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
 import { LogoMarkCompact, BrandFooter } from "@/src/components/Brand";
-import { DatePickerField } from "@/src/components/DatePickerField";
+import {
+  ScheduleForm,
+  ScheduleFormState,
+  initialScheduleState,
+  scheduleStateToPayload,
+} from "@/src/components/ScheduleForm";
 import { colors, spacing, radius } from "@/src/theme/colors";
-
-const WEEKDAYS = [
-  { i: 0, name: "Mon" },
-  { i: 1, name: "Tue" },
-  { i: 2, name: "Wed" },
-  { i: 3, name: "Thu" },
-  { i: 4, name: "Fri" },
-  { i: 5, name: "Sat" },
-  { i: 6, name: "Sun" },
-];
-
-function formatISO(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 export default function RegisterScreen() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
-  const [workingDays, setWorkingDays] = useState<number[]>([0, 1, 2, 3, 4]);
-  const [dayOffDate, setDayOffDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return formatISO(d);
-  });
+  const [schedule, setSchedule] = useState<ScheduleFormState>(() =>
+    initialScheduleState(),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const toggleDay = (i: number) => {
-    setWorkingDays((wd) =>
-      wd.includes(i) ? wd.filter((x) => x !== i) : [...wd, i].sort(),
-    );
-  };
 
   const submit = async () => {
     setError(null);
@@ -64,19 +43,12 @@ export default function RegisterScreen() {
       setError("PIN must be exactly 4 digits");
       return;
     }
-    if (workingDays.length === 0) {
-      setError("Select at least one working day");
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dayOffDate)) {
-      setError("Day-off date must be YYYY-MM-DD");
-      return;
-    }
-    const dow = new Date(dayOffDate + "T00:00:00").getDay();
-    // JS Sunday=0 .. Sat=6; convert to Mon=0..Sun=6
-    const isoDow = (dow + 6) % 7;
-    if (!workingDays.includes(isoDow)) {
-      setError("Day-off must be one of your working days");
+
+    let payload;
+    try {
+      payload = scheduleStateToPayload(schedule);
+    } catch (e: any) {
+      setError(e.message || "Please review your schedule setup");
       return;
     }
 
@@ -85,9 +57,8 @@ export default function RegisterScreen() {
       const res = await api.register({
         name: name.trim(),
         pin,
-        working_days: workingDays,
-        initial_day_off_date: dayOffDate,
         is_admin: false,
+        ...payload,
       });
       await api.setToken(res.token);
       router.replace("/(tabs)");
@@ -123,8 +94,7 @@ export default function RegisterScreen() {
 
           <Text style={styles.h1}>Set up your roster</Text>
           <Text style={styles.subtitle}>
-            Pick a unique 4-digit PIN, your working days, and an upcoming
-            day-off. We&apos;ll calculate the rest.
+            Pick a unique 4-digit PIN and tell us how you work.
           </Text>
 
           <Text style={styles.label}>Full name</Text>
@@ -151,42 +121,7 @@ export default function RegisterScreen() {
             secureTextEntry
           />
 
-          <Text style={styles.label}>Working days</Text>
-          <View style={styles.daysRow}>
-            {WEEKDAYS.map((w) => {
-              const selected = workingDays.includes(w.i);
-              return (
-                <TouchableOpacity
-                  key={w.i}
-                  testID={`working-day-${w.i}`}
-                  onPress={() => toggleDay(w.i)}
-                  style={[styles.dayChip, selected && styles.dayChipActive]}
-                >
-                  <Text
-                    style={[
-                      styles.dayChipText,
-                      selected && styles.dayChipTextActive,
-                    ]}
-                  >
-                    {w.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>Upcoming day-off date</Text>
-          <DatePickerField
-            testID="input-dayoff"
-            value={dayOffDate}
-            onChange={setDayOffDate}
-            minimumDate={new Date()}
-            label="Pick your day-off"
-          />
-          <Text style={styles.help}>
-            This is a day-off in your fortnight cycle. The day before it becomes
-            your 8h short day; the roster rotates every fortnight.
-          </Text>
+          <ScheduleForm value={schedule} onChange={setSchedule} />
 
           {error && (
             <Text style={styles.error} testID="register-error">
@@ -228,12 +163,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
-  brandName: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: colors.onSurface,
-    letterSpacing: -0.5,
-  },
   h1: {
     fontSize: 28,
     fontWeight: "700",
@@ -261,48 +190,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: 16,
     color: colors.onSurface,
-  },
-  daysRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  dayChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSecondary,
-    minWidth: 56,
-    alignItems: "center",
-  },
-  dayChipActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  dayChipText: { color: colors.onSurface, fontWeight: "600" },
-  dayChipTextActive: { color: "#fff" },
-  help: {
-    color: colors.onSurfaceTertiary,
-    fontSize: 12,
-    marginTop: spacing.sm,
-    lineHeight: 18,
-  },
-  adminRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: spacing.xl,
-    padding: spacing.md,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  adminLabel: {
-    color: colors.onSurface,
-    fontSize: 15,
-    fontWeight: "600",
   },
   error: {
     color: colors.error,

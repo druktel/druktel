@@ -3,13 +3,20 @@ import { storage } from "@/src/utils/storage";
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 const TOKEN_KEY = "auth_token";
 
+export type EmploymentType = "FT" | "PT";
+export type FTSchedule = "fortnight_9" | "daily_9_5" | "daily_8";
+
 export type UserPublic = {
   id: string;
   name: string;
   working_days: number[];
-  initial_day_off_date: string;
+  initial_day_off_date?: string | null;
   is_admin: boolean;
   created_at: string;
+  employment_type: EmploymentType;
+  ft_schedule?: FTSchedule | null;
+  pt_day_hours?: Record<string, number> | null;
+  has_lunch_break: boolean;
 };
 
 export type DayEntry = {
@@ -46,6 +53,7 @@ export type DiscoverEntry = {
   name: string;
   working_days: number[];
   is_friend: boolean;
+  employment_type: EmploymentType;
 };
 
 export type FriendEntry = {
@@ -53,6 +61,7 @@ export type FriendEntry = {
   name: string;
   working_days: number[];
   since: string;
+  employment_type: EmploymentType;
 };
 
 export type FeedItem = {
@@ -61,6 +70,7 @@ export type FeedItem = {
   label: string;
   friend_id: string;
   friend_name: string;
+  friend_employment_type: EmploymentType;
   note?: string | null;
 };
 
@@ -68,6 +78,7 @@ export type Post = {
   id: string;
   user_id: string;
   author_name: string;
+  author_employment_type: EmploymentType;
   text: string;
   visibility: "public" | "friends";
   created_at: string;
@@ -91,6 +102,7 @@ export type Notification = {
   type: "friend_post" | "reply";
   actor_id: string;
   actor_name: string;
+  actor_employment_type: EmploymentType;
   post_id?: string | null;
   text?: string | null;
   read: boolean;
@@ -138,19 +150,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+export type SchedulePayload = {
+  employment_type: EmploymentType;
+  ft_schedule?: FTSchedule | null;
+  working_days: number[];
+  initial_day_off_date?: string | null;
+  pt_day_hours?: Record<string, number> | null;
+  has_lunch_break: boolean;
+};
+
 export const api = {
   setToken,
   getToken,
-  register: (payload: {
-    name: string;
-    pin: string;
-    working_days: number[];
-    initial_day_off_date: string;
-    is_admin: boolean;
-  }) => request<{ token: string; user: UserPublic }>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }),
+  register: (payload: SchedulePayload & { name: string; pin: string; is_admin?: boolean }) =>
+    request<{ token: string; user: UserPublic }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   login: (pin: string) =>
     request<{ token: string; user: UserPublic }>("/auth/login", {
       method: "POST",
@@ -158,7 +174,7 @@ export const api = {
     }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   me: () => request<UserPublic>("/users/me"),
-  updateMe: (payload: { working_days: number[]; initial_day_off_date: string }) =>
+  updateMe: (payload: SchedulePayload) =>
     request<UserPublic>("/users/me", {
       method: "PUT",
       body: JSON.stringify(payload),

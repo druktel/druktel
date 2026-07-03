@@ -15,18 +15,21 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { api, UserPublic, RosterResponse, DayEntry, AccessCode } from "@/src/api/client";
 import { LogoMarkCompact } from "@/src/components/Brand";
+import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-function statusMeta(status: DayEntry["status"]) {
-  switch (status) {
+function statusMeta(d: DayEntry) {
+  switch (d.status) {
     case "regular":
-      return { bg: colors.brand, text: "#fff", label: "8.5h" };
+      return { bg: colors.brand, text: "#fff", label: `${d.hours.toFixed(1)}h` };
     case "short":
-      return { bg: colors.warning, text: "#fff", label: "8h" };
+      return { bg: colors.warning, text: "#fff", label: `${d.hours.toFixed(1)}h` };
     case "day_off":
       return { bg: colors.surfaceTertiary, text: colors.onSurfaceTertiary, label: "OFF" };
+    case "leave":
+      return { bg: "#7C3AED", text: "#fff", label: "LEAVE" };
     case "non_working":
       return { bg: "transparent", text: colors.muted, label: "—" };
   }
@@ -213,10 +216,13 @@ export default function AdminScreen() {
                 <Text style={styles.avatarText}>{initials(u.name).toUpperCase()}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.userName}>
-                  {u.name}
-                  {u.is_admin && <Text style={styles.adminTag}>  · ADMIN</Text>}
-                </Text>
+                <View style={styles.userNameRow}>
+                  <Text style={styles.userName} numberOfLines={1}>
+                    {u.name}
+                    {u.is_admin && <Text style={styles.adminTag}>  · ADMIN</Text>}
+                  </Text>
+                  <FTPTBadge type={u.employment_type} size="sm" />
+                </View>
                 <Text style={styles.userSub}>
                   Works {u.working_days.map((d) => WEEKDAY_NAMES[d]).join(", ")}
                 </Text>
@@ -327,7 +333,12 @@ export default function AdminScreen() {
         <SafeAreaView style={styles.modalRoot} edges={["top", "bottom"]}>
           <View style={styles.modalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.modalTitle}>{selected?.name}</Text>
+              <View style={styles.modalTitleRow}>
+                <Text style={styles.modalTitle}>{selected?.name}</Text>
+                {selected?.employment_type && (
+                  <FTPTBadge type={selected.employment_type} size="md" />
+                )}
+              </View>
               <Text style={styles.modalSub}>Next 2 weeks</Text>
             </View>
             <TouchableOpacity
@@ -355,7 +366,7 @@ export default function AdminScreen() {
                     </View>
                     <View style={styles.daysGrid}>
                       {days.map((d) => {
-                        const m = statusMeta(d.status);
+                        const m = statusMeta(d);
                         const isWorking = d.status === "regular" || d.status === "short";
                         return (
                           <View
@@ -434,7 +445,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: colors.onBrandTertiary, fontWeight: "700" },
-  userName: { color: colors.onSurface, fontWeight: "700", fontSize: 15 },
+  userName: { color: colors.onSurface, fontWeight: "700", fontSize: 15, flexShrink: 1 },
+  userNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   adminTag: { color: colors.brand, fontSize: 11, fontWeight: "700" },
   userSub: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   modalRoot: { flex: 1, backgroundColor: colors.surface },
@@ -445,6 +461,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   modalTitle: { fontSize: 22, fontWeight: "700", color: colors.onSurface },
+  modalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
   modalSub: { color: colors.onSurfaceTertiary, marginTop: 2 },
   closeBtn: {
     padding: spacing.sm,

@@ -11,8 +11,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
-import { api, RosterResponse, DayEntry } from "@/src/api/client";
+import { api, RosterResponse, DayEntry, UserPublic } from "@/src/api/client";
 import { LogoMarkCompact } from "@/src/components/Brand";
+import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const LEAVE_COLOR = "#7C3AED";
@@ -34,12 +35,12 @@ function mondayOf(d: Date) {
   return copy;
 }
 
-function statusColor(status: DayEntry["status"]) {
-  switch (status) {
+function statusColor(d: DayEntry) {
+  switch (d.status) {
     case "regular":
-      return { bg: colors.brand, text: "#fff", label: "8.5h" };
+      return { bg: colors.brand, text: "#fff", label: `${d.hours.toFixed(1)}h` };
     case "short":
-      return { bg: colors.warning, text: "#fff", label: "8h" };
+      return { bg: colors.warning, text: "#fff", label: `${d.hours.toFixed(1)}h` };
     case "day_off":
       return { bg: colors.surfaceTertiary, text: colors.onSurfaceTertiary, label: "OFF" };
     case "leave":
@@ -57,6 +58,7 @@ export default function RosterScreen() {
   const [roster, setRoster] = useState<RosterResponse | null>(null);
   const [calendarRoster, setCalendarRoster] = useState<RosterResponse | null>(null);
   const [calendarAround, setCalendarAround] = useState<Date>(() => new Date());
+  const [user, setUser] = useState<UserPublic | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +130,17 @@ export default function RosterScreen() {
   }, [start, load]);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const me = await api.me();
+        setUser(me);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     if (mode === "calendar" && !calendarRoster) {
       loadCalendar();
     }
@@ -180,7 +193,12 @@ export default function RosterScreen() {
         <View style={styles.brandBar}>
           <LogoMarkCompact />
         </View>
-        <Text style={styles.title}>My Roster</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>My Roster</Text>
+          {user?.employment_type && (
+            <FTPTBadge type={user.employment_type} size="md" testID="roster-badge" />
+          )}
+        </View>
         <View style={styles.viewToggle}>
           <TouchableOpacity
             testID="view-mode-grid"
@@ -277,13 +295,15 @@ export default function RosterScreen() {
               <Text style={styles.totalValue}>{total.toFixed(1)}h</Text>
             </View>
 
-            <Legend />
+            <Legend userIsFortnight={user?.employment_type === "FT" && user?.ft_schedule === "fortnight_9"} />
             <Text style={styles.footNote}>
-              All shifts show paid hours (30 min unpaid lunch break already
-              excluded). Short day always falls
-              before your day off; when the day off is your earliest working
-              day of the week, the short day is your latest working day of the
-              same week.
+              {user?.employment_type === "PT"
+                ? "Part-time schedule — hours shown are your paid hours per day."
+                : user?.ft_schedule === "fortnight_9"
+                ? "All shifts show paid hours (30 min unpaid lunch break already excluded). Short day always falls before your day off; when the day off is your earliest working day of the week, the short day is your latest working day of the same week."
+                : user?.has_lunch_break === false
+                ? "Fixed daily schedule — no lunch deduction applied."
+                : "Fixed daily schedule — 30 min unpaid lunch break already excluded."}
             </Text>
           </ScrollView>
         )
@@ -414,7 +434,7 @@ export default function RosterScreen() {
                 <Text style={styles.hint}>Tap a date to see details.</Text>
               )}
 
-              <Legend showHolidays />
+              <Legend showHolidays userIsFortnight={user?.employment_type === "FT" && user?.ft_schedule === "fortnight_9"} />
             </>
           )}
         </ScrollView>
@@ -442,7 +462,7 @@ function WeekBlock({
       </View>
       <View style={styles.daysGrid}>
         {days.map((d) => {
-          const c = statusColor(d.status);
+          const c = statusColor(d);
           const isColored =
             d.status === "regular" ||
             d.status === "short" ||
@@ -505,7 +525,7 @@ function DayDetailCard({
   onRemoveLeave: () => void;
   busy: boolean;
 }) {
-  const c = statusColor(entry.status);
+  const c = statusColor(entry);
   const isWorking = entry.status === "regular" || entry.status === "short";
   const isLeave = entry.status === "leave";
   const statusLabel =
@@ -538,7 +558,7 @@ function DayDetailCard({
       </View>
       {isWorking && (
         <Text style={styles.detailHelp}>
-          {entry.hours.toFixed(1)} paid hours (30 min unpaid lunch excluded)
+          {entry.hours.toFixed(1)} paid hours
         </Text>
       )}
       {isLeave && entry.leave_note && (
@@ -588,12 +608,16 @@ function DayDetailCard({
   );
 }
 
-function Legend({ showHolidays }: { showHolidays?: boolean } = {}) {
+function Legend({ showHolidays, userIsFortnight }: { showHolidays?: boolean; userIsFortnight?: boolean } = {}) {
   return (
     <View style={styles.legend}>
-      <LegendItem color={colors.brand} label="8.5h shift" />
-      <LegendItem color={colors.warning} label="8h short" />
-      <LegendItem color={colors.surfaceTertiary} label="Day off" isLight />
+      <LegendItem color={colors.brand} label="Working day" />
+      {userIsFortnight && (
+        <>
+          <LegendItem color={colors.warning} label="8h short" />
+          <LegendItem color={colors.surfaceTertiary} label="Day off" isLight />
+        </>
+      )}
       <LegendItem color={LEAVE_COLOR} label="Personal leave" />
       <View style={styles.legendItem}>
         <View style={styles.legendTodaySwatch} />
@@ -638,6 +662,12 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.md },
   brandBar: { marginBottom: spacing.md },
   title: { fontSize: 26, fontWeight: "700", color: colors.onSurface },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    flexWrap: "wrap",
+  },
   viewToggle: {
     flexDirection: "row",
     gap: spacing.sm,

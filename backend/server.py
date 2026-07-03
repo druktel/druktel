@@ -48,21 +48,33 @@ def parse_date(s: str) -> date:
 
 
 # ---------- Models ----------
+EMPLOYMENT_TYPES = {"FT", "PT"}
+FT_SCHEDULES = {"fortnight_9", "daily_9_5", "daily_8"}
+
+
 class UserPublic(BaseModel):
     id: str
     name: str
     working_days: List[int]  # 0=Mon .. 6=Sun
-    initial_day_off_date: str  # YYYY-MM-DD
+    initial_day_off_date: Optional[str] = None  # YYYY-MM-DD, only for FT/fortnight_9
     is_admin: bool
     created_at: str
+    employment_type: str = "FT"  # "FT" | "PT"
+    ft_schedule: Optional[str] = None  # "fortnight_9" | "daily_9_5" | "daily_8"
+    pt_day_hours: Optional[Dict[str, float]] = None  # PT: keys are "0".."6" -> hours
+    has_lunch_break: bool = True
 
 
 class RegisterRequest(BaseModel):
     name: str
     pin: str
     working_days: List[int]
-    initial_day_off_date: str
+    initial_day_off_date: Optional[str] = None
     is_admin: bool = False
+    employment_type: str = "FT"
+    ft_schedule: Optional[str] = None
+    pt_day_hours: Optional[Dict[str, float]] = None
+    has_lunch_break: bool = True
 
     @field_validator('pin')
     @classmethod
@@ -89,6 +101,13 @@ class RegisterRequest(BaseModel):
             raise ValueError("Name too short")
         return v
 
+    @field_validator('employment_type')
+    @classmethod
+    def validate_et(cls, v: str) -> str:
+        if v not in EMPLOYMENT_TYPES:
+            raise ValueError("employment_type must be FT or PT")
+        return v
+
 
 class LoginRequest(BaseModel):
     pin: str
@@ -96,7 +115,11 @@ class LoginRequest(BaseModel):
 
 class UpdateRosterRequest(BaseModel):
     working_days: List[int]
-    initial_day_off_date: str
+    initial_day_off_date: Optional[str] = None
+    employment_type: str = "FT"
+    ft_schedule: Optional[str] = None
+    pt_day_hours: Optional[Dict[str, float]] = None
+    has_lunch_break: bool = True
 
     @field_validator('working_days')
     @classmethod
@@ -104,6 +127,76 @@ class UpdateRosterRequest(BaseModel):
         if not v:
             raise ValueError("Select at least one working day")
         return sorted(set(v))
+
+    @field_validator('employment_type')
+    @classmethod
+    def validate_et(cls, v: str) -> str:
+        if v not in EMPLOYMENT_TYPES:
+            raise ValueError("employment_type must be FT or PT")
+        return v
+
+
+def validate_schedule_payload(
+    employment_type: str,
+    ft_schedule: Optional[str],
+    working_days: List[int],
+    initial_day_off_date: Optional[str],
+    pt_day_hours: Optional[Dict[str, float]],
+) -> Dict[str, object]:
+    """Cross-field validation for employment / schedule fields.
+    Returns the normalized subset to persist."""
+    if employment_type == "PT":
+        if not pt_day_hours or not isinstance(pt_day_hours, dict):
+            raise HTTPException(status_code=400, detail="Part-time needs hours for each working day")
+        cleaned: Dict[str, float] = {}
+        for dow in working_days:
+            key = str(dow)
+            if key not in pt_day_hours:
+                raise HTTPException(status_code=400, detail=f"Missing hours for {WEEKDAY_NAMES[dow]}")
+            try:
+                hrs = float(pt_day_hours[key])
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Hours for {WEEKDAY_NAMES[dow]} must be a number")
+            if hrs <= 0 or hrs > 14:
+                raise HTTPException(status_code=400, detail=f"Hours for {WEEKDAY_NAMES[dow]} must be between 0 and 14")
+            cleaned[key] = round(hrs, 2)
+        return {
+            "employment_type": "PT",
+            "ft_schedule": None,
+            "working_days": sorted(set(working_days)),
+            "initial_day_off_date": None,
+            "pt_day_hours": cleaned,
+        }
+
+    # Full-time
+    if ft_schedule not in FT_SCHEDULES:
+        raise HTTPException(status_code=400, detail="ft_schedule must be one of fortnight_9, daily_9_5, daily_8")
+
+    if ft_schedule == "fortnight_9":
+        if not initial_day_off_date:
+            raise HTTPException(status_code=400, detail="9-day fortnight requires an anchor day-off date")
+        try:
+            anchor = parse_date(initial_day_off_date)
+        except Exception:
+            raise HTTPException(status_code=400, detail="initial_day_off_date must be YYYY-MM-DD")
+        if anchor.weekday() not in working_days:
+            raise HTTPException(status_code=400, detail="Day-off must fall on one of your working days")
+        return {
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "working_days": sorted(set(working_days)),
+            "initial_day_off_date": initial_day_off_date,
+            "pt_day_hours": None,
+        }
+
+    # daily_9_5 or daily_8
+    return {
+        "employment_type": "FT",
+        "ft_schedule": ft_schedule,
+        "working_days": sorted(set(working_days)),
+        "initial_day_off_date": None,
+        "pt_day_hours": None,
+    }
 
 
 class AuthResponse(BaseModel):
@@ -172,6 +265,7 @@ class FriendPublic(BaseModel):
     name: str
     working_days: List[int]
     since: str
+    employment_type: str = "FT"
 
 
 class DiscoverEntry(BaseModel):
@@ -179,6 +273,7 @@ class DiscoverEntry(BaseModel):
     name: str
     working_days: List[int]
     is_friend: bool
+    employment_type: str = "FT"
 
 
 class FeedItem(BaseModel):
@@ -187,6 +282,7 @@ class FeedItem(BaseModel):
     label: str
     friend_id: str
     friend_name: str
+    friend_employment_type: str = "FT"
     note: Optional[str] = None
 
 
@@ -200,6 +296,7 @@ class Post(BaseModel):
     like_count: int = 0
     liked_by_me: bool = False
     reply_count: int = 0
+    author_employment_type: str = "FT"
 
 
 class PostCreate(BaseModel):
@@ -253,6 +350,7 @@ class Notification(BaseModel):
     type: str  # "friend_post" | "reply"
     actor_id: str
     actor_name: str
+    actor_employment_type: str = "FT"
     post_id: Optional[str] = None
     text: Optional[str] = None
     read: bool = False
@@ -290,45 +388,76 @@ WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 def compute_day_status(user: dict, d: date):
-    """Return (status, hours, label) for date d."""
-    working_days = sorted(user["working_days"])
-    anchor = parse_date(user["initial_day_off_date"])
+    """Return (status, hours, label) for date d based on user's employment type/schedule."""
+    et = user.get("employment_type", "FT")
+    schedule = user.get("ft_schedule", "fortnight_9")
+    working_days = sorted(user.get("working_days", []))
+    lunch = bool(user.get("has_lunch_break", True))
+    d_dow = d.weekday()
+
+    # ----- Part-time -----
+    if et == "PT":
+        if d_dow not in working_days:
+            return ("non_working", 0.0, WEEKDAY_NAMES[d_dow])
+        pt_map = user.get("pt_day_hours") or {}
+        try:
+            raw = float(pt_map.get(str(d_dow), 0.0) or 0.0)
+        except Exception:
+            raw = 0.0
+        paid = max(0.0, raw - (0.5 if lunch else 0.0))
+        return ("regular", round(paid, 2), f"{paid:.1f}h paid")
+
+    # ----- Full-time flat-daily schedules -----
+    if schedule == "daily_9_5":
+        if d_dow not in working_days:
+            return ("non_working", 0.0, WEEKDAY_NAMES[d_dow])
+        paid = 9.5 if lunch else 10.0
+        return ("regular", paid, f"{paid:.1f}h paid")
+
+    if schedule == "daily_8":
+        if d_dow not in working_days:
+            return ("non_working", 0.0, WEEKDAY_NAMES[d_dow])
+        paid = 8.0 if lunch else 8.5
+        return ("regular", paid, f"{paid:.1f}h paid")
+
+    # ----- Full-time 9-day fortnight (existing logic) -----
+    anchor_str = user.get("initial_day_off_date")
+    if not anchor_str:
+        if d_dow not in working_days:
+            return ("non_working", 0.0, WEEKDAY_NAMES[d_dow])
+        return ("regular", 8.5, "8.5h paid")
+    anchor = parse_date(anchor_str)
     anchor_dow = anchor.weekday()
 
     if anchor_dow not in working_days:
-        # Anchor day-off must be a working day. Fallback: treat as regular.
+        if d_dow not in working_days:
+            return ("non_working", 0.0, WEEKDAY_NAMES[d_dow])
         return ("regular", 8.5, "8.5h paid")
 
-    # fortnight0_start = Monday of week1 of the anchor's fortnight.
-    # Anchor is in week 2 of that fortnight.
     anchor_week_monday = anchor - timedelta(days=anchor_dow)
     fortnight0_start = anchor_week_monday - timedelta(days=7)
 
     days_diff = (d - fortnight0_start).days
-    fortnight_index = days_diff // 14  # floor division; negatives handled
-    day_in_fortnight = days_diff % 14  # Python % always non-negative
+    fortnight_index = days_diff // 14
+    day_in_fortnight = days_diff % 14
 
-    # Determine day-off weekday for this fortnight
     initial_idx = working_days.index(anchor_dow)
     n = len(working_days)
     shifted_idx = (initial_idx - fortnight_index) % n
     day_off_dow = working_days[shifted_idx]
     short_dow = working_days[(shifted_idx - 1) % n]
 
-    d_dow = d.weekday()
     if d_dow not in working_days:
         return ("non_working", 0.0, WEEKDAY_NAMES[d_dow])
 
     is_week2 = day_in_fortnight >= 7
-
     if is_week2:
         if d_dow == day_off_dow:
             return ("day_off", 0.0, "Day off")
         if d_dow == short_dow:
             return ("short", 8.0, "Short 8h paid")
         return ("regular", 8.5, "8.5h paid")
-    else:
-        return ("regular", 8.5, "8.5h paid")
+    return ("regular", 8.5, "8.5h paid")
 
 
 def build_roster(user: dict, start: date, num_days: int, leaves: Optional[Dict[str, str]] = None) -> RosterResponse:
@@ -398,13 +527,13 @@ async def verify_access_code(payload: AccessVerifyRequest):
 
 @api_router.post("/auth/register", response_model=AuthResponse)
 async def register(payload: RegisterRequest):
-    try:
-        anchor = parse_date(payload.initial_day_off_date)
-    except Exception:
-        raise HTTPException(status_code=400, detail="initial_day_off_date must be YYYY-MM-DD")
-
-    if anchor.weekday() not in payload.working_days:
-        raise HTTPException(status_code=400, detail="Day-off must fall on one of your working days")
+    normalized = validate_schedule_payload(
+        payload.employment_type,
+        payload.ft_schedule,
+        payload.working_days,
+        payload.initial_day_off_date,
+        payload.pt_day_hours,
+    )
 
     pin_hash = hash_pin(payload.pin)
     if await db.users.find_one({"pin_hash": pin_hash}):
@@ -414,12 +543,12 @@ async def register(payload: RegisterRequest):
         "id": str(uuid.uuid4()),
         "name": payload.name,
         "pin_hash": pin_hash,
-        "working_days": payload.working_days,
-        "initial_day_off_date": payload.initial_day_off_date,
         # is_admin is NEVER settable via public registration — new users are
         # regular employees. Admins are pre-seeded or promoted server-side.
         "is_admin": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "has_lunch_break": bool(payload.has_lunch_break),
+        **normalized,
     }
     await db.users.insert_one(user_doc)
 
@@ -468,24 +597,16 @@ async def me(user: dict = Depends(get_current_user)):
 
 @api_router.put("/users/me", response_model=UserPublic)
 async def update_me(payload: UpdateRosterRequest, user: dict = Depends(get_current_user)):
-    try:
-        anchor = parse_date(payload.initial_day_off_date)
-    except Exception:
-        raise HTTPException(status_code=400, detail="initial_day_off_date must be YYYY-MM-DD")
-
-    for d in payload.working_days:
-        if d < 0 or d > 6:
-            raise HTTPException(status_code=400, detail="Working days must be 0-6")
-
-    if anchor.weekday() not in payload.working_days:
-        raise HTTPException(status_code=400, detail="Day-off must fall on one of your working days")
-
+    normalized = validate_schedule_payload(
+        payload.employment_type,
+        payload.ft_schedule,
+        payload.working_days,
+        payload.initial_day_off_date,
+        payload.pt_day_hours,
+    )
     await db.users.update_one(
         {"id": user["id"]},
-        {"$set": {
-            "working_days": sorted(set(payload.working_days)),
-            "initial_day_off_date": payload.initial_day_off_date,
-        }},
+        {"$set": {**normalized, "has_lunch_break": bool(payload.has_lunch_break)}},
     )
     updated = await db.users.find_one({"id": user["id"]}, {"_id": 0, "pin_hash": 0})
     return UserPublic(**updated)
@@ -600,6 +721,7 @@ async def discover_users(limit: int = 50, user: dict = Depends(get_current_user)
             name=u["name"],
             working_days=u.get("working_days", []),
             is_friend=(u["id"] in friend_ids),
+            employment_type=u.get("employment_type", "FT"),
         )
         for u in others
     ]
@@ -622,6 +744,7 @@ async def list_friends(user: dict = Depends(get_current_user)):
             name=f["name"],
             working_days=f.get("working_days", []),
             since=since_by_id.get(f["id"], ""),
+            employment_type=f.get("employment_type", "FT"),
         )
         for f in friend_docs
     ]
@@ -678,6 +801,7 @@ async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
     items: List[dict] = []
     for f in friend_docs:
         leaves_map = await get_user_leaves_map(f["id"], today, end)
+        f_et = f.get("employment_type", "FT")
         for i in range(days):
             d = today + timedelta(days=i)
             iso = d.isoformat()
@@ -688,6 +812,7 @@ async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
                     "label": "Personal leave",
                     "friend_id": f["id"],
                     "friend_name": f["name"],
+                    "friend_employment_type": f_et,
                     "note": leaves_map[iso] or None,
                 })
                 continue
@@ -699,6 +824,7 @@ async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
                     "label": "Day off",
                     "friend_id": f["id"],
                     "friend_name": f["name"],
+                    "friend_employment_type": f_et,
                     "note": None,
                 })
             elif status == "short":
@@ -708,6 +834,7 @@ async def friends_feed(days: int = 14, user: dict = Depends(get_current_user)):
                     "label": "Short day (8h)",
                     "friend_id": f["id"],
                     "friend_name": f["name"],
+                    "friend_employment_type": f_et,
                     "note": None,
                 })
     items.sort(key=lambda x: (x["date"], x["friend_name"]))
@@ -727,6 +854,7 @@ def _serialize_post(doc: dict, viewer_id: str) -> Post:
         like_count=len(liked_by),
         liked_by_me=viewer_id in liked_by,
         reply_count=int(doc.get("reply_count", 0)),
+        author_employment_type=doc.get("author_employment_type", "FT"),
     )
 
 
@@ -736,12 +864,14 @@ async def _notify_friends_of_post(author: dict, post_doc: dict) -> None:
         return
     now = datetime.now(timezone.utc).isoformat()
     snippet = post_doc["text"][:80]
+    actor_et = author.get("employment_type", "FT")
     notif_docs = [{
         "id": str(uuid.uuid4()),
         "user_id": edge["friend_id"],
         "type": "friend_post",
         "actor_id": author["id"],
         "actor_name": author["name"],
+        "actor_employment_type": actor_et,
         "post_id": post_doc["id"],
         "text": snippet,
         "read": False,
@@ -757,6 +887,7 @@ async def create_post(payload: PostCreate, user: dict = Depends(get_current_user
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
         "author_name": user["name"],
+        "author_employment_type": user.get("employment_type", "FT"),
         "text": payload.text,
         "visibility": payload.visibility,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -853,6 +984,7 @@ async def create_reply(post_id: str, payload: ReplyCreate, user: dict = Depends(
             "type": "reply",
             "actor_id": user["id"],
             "actor_name": user["name"],
+            "actor_employment_type": user.get("employment_type", "FT"),
             "post_id": post_id,
             "text": payload.text[:80],
             "read": False,
@@ -1012,6 +1144,18 @@ async def startup_indexes():
     await db.replies.create_index([("post_id", 1), ("created_at", 1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
 
+    # Migration: backfill employment type on legacy users (pre-FT/PT feature).
+    # Anyone without an employment_type gets treated as FT / 9-day fortnight,
+    # which matches the original behaviour before this feature shipped.
+    await db.users.update_many(
+        {"employment_type": {"$exists": False}},
+        {"$set": {
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
+        }},
+    )
+
     # Seed the standard employee access code so new employees can pass the
     # gate. Admins can create additional codes via the Admin tab.
     if not await db.access_codes.find_one({"code": "0000"}):
@@ -1052,6 +1196,9 @@ async def startup_indexes():
             "initial_day_off_date": anchor.isoformat(),
             "is_admin": True,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "employment_type": "FT",
+            "ft_schedule": "fortnight_9",
+            "has_lunch_break": True,
         })
         logger.info("Seeded admin user with PIN 6641.")
 

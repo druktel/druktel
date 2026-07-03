@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { api, RosterResponse, UserPublic } from "@/src/api/client";
 import { LogoMarkCompact } from "@/src/components/Brand";
+import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 type TodayInfo = {
@@ -132,8 +133,13 @@ export default function TodayScreen() {
           <LogoMarkCompact />
         </View>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.hello}>Hi, {user?.name.split(" ")[0]}</Text>
+          <View style={{ flex: 1 }}>
+            <View style={styles.helloRow}>
+              <Text style={styles.hello}>Hi, {user?.name.split(" ")[0]}</Text>
+              {user?.employment_type && (
+                <FTPTBadge type={user.employment_type} size="md" testID="today-badge" />
+              )}
+            </View>
             <Text style={styles.headerSub}>
               {today ? formatDateLong(today.date) : ""}
             </Text>
@@ -174,7 +180,9 @@ export default function TodayScreen() {
                     {today.hours.toFixed(1)}h
                   </Text>
                   <Text style={styles.heroSub}>
-                    30 min unpaid lunch already excluded
+                    {user?.has_lunch_break === false
+                      ? "No lunch break — paid hours shown"
+                      : "30 min unpaid lunch already excluded"}
                   </Text>
                 </>
               ) : today.status === "leave" ? (
@@ -243,6 +251,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   hello: { fontSize: 26, fontWeight: "700", color: colors.onSurface },
+  helloRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    flexWrap: "wrap",
+  },
   headerSub: { color: colors.onSurfaceTertiary, marginTop: 2 },
   logoutBtn: {
     padding: spacing.sm,

@@ -27,6 +27,7 @@ import {
   UserPublic,
 } from "@/src/api/client";
 import { LogoMarkCompact } from "@/src/components/Brand";
+import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
 const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -411,7 +412,10 @@ export default function FeedScreen() {
                       <Text style={styles.avatarText}>{initials(p.author_name)}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.postAuthor}>{p.author_name}</Text>
+                      <View style={styles.postAuthorRow}>
+                        <Text style={styles.postAuthor}>{p.author_name}</Text>
+                        <FTPTBadge type={p.author_employment_type} size="sm" />
+                      </View>
                       <View style={styles.postMeta}>
                         <Ionicons
                           name={p.visibility === "public" ? "globe-outline" : "people-outline"}
@@ -554,9 +558,12 @@ export default function FeedScreen() {
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{initials(item.name)}</Text>
                 </View>
-                <Text style={styles.cardName} numberOfLines={1}>
-                  {item.name}
-                </Text>
+                <View style={styles.discoverNameRow}>
+                  <Text style={styles.cardName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <FTPTBadge type={item.employment_type} size="sm" />
+                </View>
                 <Text style={styles.cardMeta} numberOfLines={1}>
                   {item.working_days.map((d) => WEEKDAY_NAMES[d]).join("·")}
                 </Text>
@@ -602,7 +609,10 @@ export default function FeedScreen() {
                   <Text style={styles.avatarText}>{initials(f.name)}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.friendName}>{f.name}</Text>
+                  <View style={styles.friendNameRow}>
+                    <Text style={styles.friendName}>{f.name}</Text>
+                    <FTPTBadge type={f.employment_type} size="sm" />
+                  </View>
                   <Text style={styles.friendMeta}>
                     Works {f.working_days.map((d) => WEEKDAY_NAMES[d]).join(", ")}
                   </Text>
@@ -645,7 +655,10 @@ export default function FeedScreen() {
                     <Ionicons name={meta.icon} size={18} color={meta.color} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.feedName}>{it.friend_name}</Text>
+                    <View style={styles.feedNameRow}>
+                      <Text style={styles.feedName}>{it.friend_name}</Text>
+                      <FTPTBadge type={it.friend_employment_type} size="sm" />
+                    </View>
                     <Text style={styles.feedDesc}>
                       {it.label}
                       {it.note ? ` — ${it.note}` : ""}
@@ -708,6 +721,9 @@ export default function FeedScreen() {
                       <Text style={styles.notifActor}>{n.actor_name}</Text>{" "}
                       {n.type === "friend_post" ? "shared a new post" : "replied to your post"}
                     </Text>
+                    <View style={styles.notifBadgeRow}>
+                      <FTPTBadge type={n.actor_employment_type} size="sm" />
+                    </View>
                     {n.text ? (
                       <Text style={styles.notifSnippet} numberOfLines={2}>
                         {n.text}
@@ -810,6 +826,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   postAuthor: { color: colors.onSurface, fontWeight: "700", fontSize: 14 },
+  postAuthorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
   postMeta: {
     flexDirection: "row",
     alignItems: "center",
@@ -993,6 +1015,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   notifText: { color: colors.onSurface, fontSize: 14 },
+  notifBadgeRow: { flexDirection: "row", marginTop: 4 },
   notifActor: { fontWeight: "800" },
   notifSnippet: {
     color: colors.onSurfaceTertiary,
@@ -1060,6 +1083,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 13,
     textAlign: "center",
+    flexShrink: 1,
+  },
+  discoverNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexWrap: "wrap",
+    justifyContent: "center",
   },
   cardMeta: {
     color: colors.onSurfaceTertiary,
@@ -1106,6 +1137,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   friendName: { color: colors.onSurface, fontWeight: "700", fontSize: 14 },
+  friendNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
   friendMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   removeBtn: {
     padding: spacing.sm,
@@ -1132,6 +1169,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   feedName: { color: colors.onSurface, fontWeight: "700", fontSize: 14 },
+  feedNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
   feedDesc: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   feedDate: {
     color: colors.onSurface,
