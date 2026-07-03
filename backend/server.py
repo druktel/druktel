@@ -297,7 +297,11 @@ async def verify_access_code(payload: AccessVerifyRequest):
     doc = await db.access_codes.find_one({"code": code, "is_active": True}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=401, detail="Invalid access code")
-    return {"ok": True, "code_id": doc["id"]}
+    return {
+        "ok": True,
+        "code_id": doc["id"],
+        "is_admin_gate": bool(doc.get("is_admin_gate", False)),
+    }
 
 
 @api_router.post("/auth/register", response_model=AuthResponse)
@@ -320,7 +324,9 @@ async def register(payload: RegisterRequest):
         "pin_hash": pin_hash,
         "working_days": payload.working_days,
         "initial_day_off_date": payload.initial_day_off_date,
-        "is_admin": payload.is_admin,
+        # is_admin is NEVER settable via public registration — new users are
+        # regular employees. Admins are pre-seeded or promoted server-side.
+        "is_admin": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(user_doc)
@@ -545,6 +551,7 @@ async def admin_create_access_code(payload: AccessCodeCreate, _: dict = Depends(
         "code": payload.code,
         "note": (payload.note or "").strip(),
         "is_active": True,
+        "is_admin_gate": bool(payload.is_admin_gate),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.access_codes.insert_one(doc)
@@ -586,16 +593,49 @@ async def startup_indexes():
     await db.leaves.create_index("id", unique=True)
     await db.access_codes.create_index("code", unique=True)
     await db.access_codes.create_index("id", unique=True)
-    # Seed a default access code so the very first admin can get past the gate.
-    if await db.access_codes.count_documents({}) == 0:
+
+    # Seed the standard employee access code so new employees can pass the
+    # gate. Admins can create additional codes via the Admin tab.
+    if not await db.access_codes.find_one({"code": "0000"}):
         await db.access_codes.insert_one({
             "id": str(uuid.uuid4()),
             "code": "0000",
-            "note": "Default bootstrap code — replace via Admin → Access codes.",
+            "note": "Standard employee access code — share with new team members.",
             "is_active": True,
+            "is_admin_gate": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        logger.info("Seeded default access code '0000'. Change via Admin → Access codes.")
+
+    # Seed the ADMIN gate code. Anyone entering this at the gate is routed to
+    # the admin-only sign-in flow (PIN 6641).
+    if not await db.access_codes.find_one({"code": "0115"}):
+        await db.access_codes.insert_one({
+            "id": str(uuid.uuid4()),
+            "code": "0115",
+            "note": "Admin access — sign in with the admin PIN (6641).",
+            "is_active": True,
+            "is_admin_gate": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    # Seed the pre-provisioned admin user (PIN 6641) so the admin can log in
+    # immediately after passing the 0115 admin gate.
+    admin_pin_hash = hash_pin("6641")
+    if not await db.users.find_one({"pin_hash": admin_pin_hash}):
+        today = datetime.now(timezone.utc).date()
+        # Pick the next upcoming Wednesday as the anchor day-off.
+        offset = (2 - today.weekday()) % 7 or 7  # Wednesday = 2
+        anchor = today + timedelta(days=offset)
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "name": "Administrator",
+            "pin_hash": admin_pin_hash,
+            "working_days": [0, 1, 2, 3, 4],
+            "initial_day_off_date": anchor.isoformat(),
+            "is_admin": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info("Seeded admin user with PIN 6641.")
 
 
 @app.on_event("shutdown")

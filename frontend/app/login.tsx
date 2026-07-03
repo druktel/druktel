@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import { useRouter, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/api/client";
+import { storage } from "@/src/utils/storage";
 import { Logo, BrandFooter } from "@/src/components/Brand";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -23,6 +24,14 @@ export default function LoginScreen() {
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adminGate, setAdminGate] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const flag = await storage.getItem<string>("admin_gate", "");
+      setAdminGate(!!flag);
+    })();
+  }, []);
 
   const onPress = async (n: string) => {
     if (loading) return;
@@ -68,7 +77,9 @@ export default function LoginScreen() {
             <Logo size={56} />
             <View>
               <Text style={styles.brand}>Profile</Text>
-              <Text style={styles.tagline}>Enter your 4-digit PIN</Text>
+              <Text style={styles.tagline}>
+                {adminGate ? "Admin sign-in — enter your PIN" : "Enter your 4-digit PIN"}
+              </Text>
             </View>
           </View>
         </SafeAreaView>
@@ -117,13 +128,32 @@ export default function LoginScreen() {
         {loading && (
           <ActivityIndicator style={{ marginTop: spacing.sm }} color={colors.brand} />
         )}
-        <Link href="/register" asChild>
-          <TouchableOpacity testID="go-to-register" style={styles.registerLink}>
-            <Text style={styles.registerText}>
-              New here? <Text style={styles.registerBold}>Create account</Text>
-            </Text>
-          </TouchableOpacity>
-        </Link>
+        {!adminGate ? (
+          <Link href="/register" asChild>
+            <TouchableOpacity testID="go-to-register" style={styles.registerLink}>
+              <Text style={styles.registerText}>
+                New here? <Text style={styles.registerBold}>Create account</Text>
+              </Text>
+            </TouchableOpacity>
+          </Link>
+        ) : (
+          <Text testID="admin-only-notice" style={styles.adminNotice}>
+            <Ionicons name="shield-checkmark-outline" size={13} color={colors.brand} />{" "}
+            Admin-only access. Contact your team lead for a standard code.
+          </Text>
+        )}
+        <TouchableOpacity
+          testID="change-access-code"
+          style={styles.changeAccessBtn}
+          onPress={async () => {
+            await storage.removeItem("access_granted");
+            await storage.removeItem("admin_gate");
+            router.replace("/access");
+          }}
+        >
+          <Ionicons name="key-outline" size={14} color={colors.muted} />
+          <Text style={styles.changeAccessText}>Change access code</Text>
+        </TouchableOpacity>
         <BrandFooter />
       </SafeAreaView>
     </View>
@@ -202,4 +232,21 @@ const styles = StyleSheet.create({
   registerLink: { marginTop: spacing.xl },
   registerText: { color: colors.onSurfaceTertiary, fontSize: 14 },
   registerBold: { color: colors.brand, fontWeight: "700" },
+  adminNotice: {
+    marginTop: spacing.xl,
+    color: colors.onSurfaceTertiary,
+    fontSize: 12,
+    textAlign: "center",
+    paddingHorizontal: spacing.lg,
+    lineHeight: 18,
+  },
+  changeAccessBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: spacing.lg,
+    padding: spacing.sm,
+  },
+  changeAccessText: { color: colors.muted, fontSize: 12 },
 });

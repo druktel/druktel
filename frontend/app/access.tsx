@@ -38,8 +38,13 @@ export default function AccessGateScreen() {
   const submit = async (c: string) => {
     setLoading(true);
     try {
-      await api.verifyAccessCode(c);
+      const res = await api.verifyAccessCode(c);
       await storage.setItem(ACCESS_GRANTED_KEY, "1");
+      if (res.is_admin_gate) {
+        await storage.setItem("admin_gate", "1");
+      } else {
+        await storage.removeItem("admin_gate");
+      }
       router.replace("/login");
     } catch (e: any) {
       setError(e.message || "Invalid code");

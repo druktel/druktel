@@ -37,6 +37,7 @@ export type AccessCode = {
   code: string;
   note?: string | null;
   is_active: boolean;
+  is_admin_gate: boolean;
   created_at: string;
 };
 
@@ -153,16 +154,16 @@ export const api = {
   deleteLeave: (id: string) =>
     request<{ ok: boolean }>(`/leaves/${id}`, { method: "DELETE" }),
   verifyAccessCode: (code: string) =>
-    request<{ ok: boolean; code_id: string }>("/access/verify", {
+    request<{ ok: boolean; code_id: string; is_admin_gate: boolean }>("/access/verify", {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
   adminListAccessCodes: () =>
     request<{ codes: AccessCode[] }>("/admin/access-codes"),
-  adminCreateAccessCode: (code: string, note?: string) =>
+  adminCreateAccessCode: (code: string, note?: string, isAdminGate?: boolean) =>
     request<AccessCode>("/admin/access-codes", {
       method: "POST",
-      body: JSON.stringify({ code, note }),
+      body: JSON.stringify({ code, note, is_admin_gate: !!isAdminGate }),
     }),
   adminDeleteAccessCode: (id: string) =>
     request<{ ok: boolean }>(`/admin/access-codes/${id}`, { method: "DELETE" }),

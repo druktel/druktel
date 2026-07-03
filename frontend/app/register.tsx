@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -46,7 +45,6 @@ export default function RegisterScreen() {
     d.setDate(d.getDate() + 7);
     return formatISO(d);
   });
-  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,7 +87,7 @@ export default function RegisterScreen() {
         pin,
         working_days: workingDays,
         initial_day_off_date: dayOffDate,
-        is_admin: isAdmin,
+        is_admin: false,
       });
       await api.setToken(res.token);
       router.replace("/(tabs)");
@@ -189,22 +187,6 @@ export default function RegisterScreen() {
             This is a day-off in your fortnight cycle. The day before it becomes
             your 8h short day; the roster rotates every fortnight.
           </Text>
-
-          <View style={styles.adminRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.adminLabel}>Admin account</Text>
-              <Text style={styles.help}>
-                Enable to view all team rosters.
-              </Text>
-            </View>
-            <Switch
-              testID="switch-admin"
-              value={isAdmin}
-              onValueChange={setIsAdmin}
-              trackColor={{ false: colors.border, true: colors.brand }}
-              thumbColor="#fff"
-            />
-          </View>
 
           {error && (
             <Text style={styles.error} testID="register-error">
