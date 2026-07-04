@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { api, UserPublic, RosterResponse, DayEntry, AccessCode } from "@/src/api/client";
-import { LogoMarkCompact } from "@/src/components/Brand";
+import { AppHeader } from "@/src/components/AppHeader";
 import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -133,10 +133,8 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
+      <AppHeader />
       <View style={styles.header}>
-        <View style={styles.brandBar}>
-          <LogoMarkCompact />
-        </View>
         <Text style={styles.title}>Team Admin</Text>
         <Text style={styles.subtitle}>
           {tab === "users"

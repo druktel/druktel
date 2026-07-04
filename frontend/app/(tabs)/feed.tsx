@@ -26,7 +26,7 @@ import {
   Notification,
   UserPublic,
 } from "@/src/api/client";
-import { LogoMarkCompact } from "@/src/components/Brand";
+import { AppHeader } from "@/src/components/AppHeader";
 import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -282,6 +282,7 @@ export default function FeedScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
+      <AppHeader />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -300,9 +301,6 @@ export default function FeedScreen() {
           />
         }
       >
-        <View style={styles.brandBar}>
-          <LogoMarkCompact />
-        </View>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>My Team</Text>

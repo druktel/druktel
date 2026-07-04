@@ -14,7 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { api, UserPublic, Leave } from "@/src/api/client";
-import { LogoMarkCompact, BrandFooter } from "@/src/components/Brand";
+import { BrandFooter } from "@/src/components/Brand";
+import { AppHeader } from "@/src/components/AppHeader";
 import { DatePickerField } from "@/src/components/DatePickerField";
 import { FTPTBadge } from "@/src/components/FTPTBadge";
 import {
@@ -136,14 +137,12 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
+      <AppHeader />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.brandBar}>
-            <LogoMarkCompact />
-          </View>
           <Text style={styles.title}>Settings</Text>
           <Text style={styles.subtitle}>Edit your roster preferences.</Text>
 

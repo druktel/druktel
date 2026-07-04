@@ -6,14 +6,12 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-  TouchableOpacity,
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { api, RosterResponse, UserPublic } from "@/src/api/client";
-import { LogoMarkCompact } from "@/src/components/Brand";
+import { AppHeader } from "@/src/components/AppHeader";
 import { FTPTBadge } from "@/src/components/FTPTBadge";
 import { colors, spacing, radius } from "@/src/theme/colors";
 
@@ -56,7 +54,6 @@ function statusMeta(status: TodayInfo["status"]) {
 }
 
 export default function TodayScreen() {
-  const router = useRouter();
   const [user, setUser] = useState<UserPublic | null>(null);
   const [today, setToday] = useState<TodayInfo | null>(null);
   const [roster, setRoster] = useState<RosterResponse | null>(null);
@@ -93,14 +90,6 @@ export default function TodayScreen() {
     load();
   }, [load]);
 
-  const onLogout = async () => {
-    try {
-      await api.logout();
-    } catch {}
-    await api.setToken(null);
-    router.replace("/login");
-  };
-
   if (loading) {
     return (
       <View style={styles.center} testID="today-loading">
@@ -116,6 +105,7 @@ export default function TodayScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
+      <AppHeader />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={
@@ -129,9 +119,6 @@ export default function TodayScreen() {
           />
         }
       >
-        <View style={styles.brandBar}>
-          <LogoMarkCompact />
-        </View>
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <View style={styles.helloRow}>
@@ -144,13 +131,6 @@ export default function TodayScreen() {
               {today ? formatDateLong(today.date) : ""}
             </Text>
           </View>
-          <TouchableOpacity
-            testID="logout-btn"
-            onPress={onLogout}
-            style={styles.logoutBtn}
-          >
-            <Ionicons name="log-out-outline" size={22} color={colors.onSurface} />
-          </TouchableOpacity>
         </View>
 
         {error && (
