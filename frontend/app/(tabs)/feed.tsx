@@ -305,7 +305,7 @@ export default function FeedScreen() {
         </View>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Team feed</Text>
+            <Text style={styles.title}>My Team</Text>
             <Text style={styles.subtitle}>
               Follow teammates to see their upcoming day-offs and leave.
             </Text>
